@@ -1,0 +1,8 @@
+{
+  "_note": "LOCAL TESTING ONLY. These accounts exist only in storage/dev.sqlite on a developer machine. Never create them on the live site; install.php makes the real admin there.",
+  "accounts": [
+    { "email": "admin@nonogram.test", "password": "c938b39036f6cde6", "role": "admin", "products": [] },
+    { "email": "fe@nonogram.test", "password": "b1e4428dbe583670", "role": "user", "products": ["fe"] },
+    { "email": "nolicense@nonogram.test", "password": "d3639afef15a4580", "role": "user", "products": [] }
+  ]
+}

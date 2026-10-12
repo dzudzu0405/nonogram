@@ -1,0 +1,887 @@
+<title>Nonogram Studio App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* Layout: workbench — funnel strip on top, control rail left, print-preview sheet + book shelf + upgrade modules right */
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#14181d; --muted:#5a6570; --line:#d6dce2;
+  --accent:#1d4ed8; --accent-soft:#e3eafc; --on-accent:#ffffff;
+  --ok:#17804a; --ok-soft:#e1f3e9; --warn:#a86a00; --warn-soft:#fdf1d6; --bad:#b4372b;
+  --t-fe:#4b5563; --t-pro:#1d4ed8; --t-dfy:#0f766e; --t-ag:#b45309;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Archivo", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1317; --surface:#171c22; --ink:#e7ecf1; --muted:#97a3ae; --line:#2a323b;
+  --accent:#7aa2ff; --accent-soft:#1c2a4a; --on-accent:#0b1020;
+  --ok:#5fd394; --ok-soft:#14301f; --warn:#f2c14e; --warn-soft:#352a10; --bad:#ff8a7d;
+  --t-fe:#9aa4b1; --t-pro:#7aa2ff; --t-dfy:#4fd1c0; --t-ag:#f0a35a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1317; --surface:#171c22; --ink:#e7ecf1; --muted:#97a3ae; --line:#2a323b;
+  --accent:#7aa2ff; --accent-soft:#1c2a4a; --on-accent:#0b1020;
+  --ok:#5fd394; --ok-soft:#14301f; --warn:#f2c14e; --warn-soft:#352a10; --bad:#ff8a7d;
+  --t-fe:#9aa4b1; --t-pro:#7aa2ff; --t-dfy:#4fd1c0; --t-ag:#f0a35a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5}
+.app{max-width:1280px;margin:0 auto;padding-inline:20px;padding-block:24px 48px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(26px,4vw,38px);line-height:1.05;margin:0;letter-spacing:-.02em;text-wrap:balance}
+h1 .px{display:inline-grid;grid-template-columns:repeat(3,7px);gap:2px;vertical-align:middle;margin-right:10px;transform:translateY(-3px)}
+h1 .px i{width:7px;height:7px;background:var(--ink)}
+h1 .px i.o{background:transparent;outline:1px solid var(--line)}
+.tag{color:var(--muted);margin:6px 0 0;max-width:62ch}
+.badges{display:flex;gap:6px;flex-wrap:wrap}
+.badge{font-family:var(--f-mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--surface)}
+
+/* funnel strip */
+.funnel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:10px}
+.funnelhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+.funnelhead h2{font-family:var(--f-display);font-weight:600;font-size:15px;margin:0}
+.funnelhead .note{margin:0}
+.fsteps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media (max-width:980px){.fsteps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:480px){.fsteps{grid-template-columns:minmax(0,1fr)}}
+.fstep{border:1px solid var(--line);border-radius:8px;padding:9px 10px;display:flex;flex-direction:column;gap:5px;background:var(--bg);min-width:0}
+.fstep b{font-size:13px}
+.fstep .price{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.fstep select{padding:5px 7px;font-size:12px}
+.presets{display:flex;gap:6px;flex-wrap:wrap}
+.tier{font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:4px;color:#fff;align-self:flex-start;white-space:nowrap}
+.tier.fe{background:var(--t-fe)} .tier.pro{background:var(--t-pro)} .tier.dfy{background:var(--t-dfy)} .tier.ag{background:var(--t-ag)}
+:root:not([data-theme="light"]) .tier{color:var(--surface)}
+:root[data-theme="light"] .tier{color:#fff}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .tier{color:#fff}}
+
+.layout{display:grid;grid-template-columns:330px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:20px}
+.step{display:flex;flex-direction:column;gap:10px}
+.step h2,.card h2{font-family:var(--f-display);font-weight:600;font-size:16px;margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.step h2 b{font-family:var(--f-mono);font-size:11px;width:22px;height:22px;display:grid;place-items:center;border-radius:6px;background:var(--ink);color:var(--surface)}
+.samples{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.samples button{aspect-ratio:1;padding:3px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;display:grid;place-items:center}
+.samples button img{width:100%;height:100%}
+.samples button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.drop{border:1.5px dashed var(--line);border-radius:8px;padding:12px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+.drop strong{color:var(--ink);font-weight:600}
+.drop input{display:none}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+select,input[type=text],textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%}
+textarea{resize:vertical;font-size:12.5px;line-height:1.45}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.rangehead{display:flex;justify-content:space-between}
+.rangehead span:last-child{font-family:var(--f-mono);color:var(--ink)}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink);cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px;flex:none}
+.btn{font:inherit;font-weight:600;border-radius:8px;padding:8px 12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-align:center}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{padding:5px 9px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,.samples button:focus-visible,.tab:focus-visible,.drop:focus-visible,.recipe:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btns .wide{grid-column:1/-1}
+.note{font-size:12px;color:var(--muted);margin:0}
+.sub{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:9px;position:relative}
+.subhead{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+
+/* locks */
+.locked > :not(.lockmsg){opacity:.42;pointer-events:none;filter:grayscale(.4)}
+.lockmsg{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;background:var(--warn-soft);color:var(--ink);border-radius:7px;padding:7px 9px}
+.lockmsg svg{width:13px;height:13px;flex:none;color:var(--warn)}
+.linkbtn{font:inherit;font-size:12px;font-weight:600;background:none;border:0;color:var(--accent);cursor:pointer;padding:0;text-decoration:underline}
+
+.work{display:flex;flex-direction:column;gap:14px;min-width:0}
+.sheet,.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.card{padding:14px;display:flex;flex-direction:column;gap:12px;overflow:visible}
+.sheethead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:4px;background:var(--bg);padding:3px;border-radius:8px}
+.tab{font:inherit;font-weight:600;font-size:13px;border:0;background:transparent;color:var(--muted);padding:6px 12px;border-radius:6px;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12px;font-weight:600;padding:4px 9px;border-radius:999px;background:var(--bg);color:var(--muted);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.stage{padding:16px;display:flex;justify-content:center;background:repeating-linear-gradient(0deg,transparent 0 23px,color-mix(in srgb,var(--line) 45%,transparent) 23px 24px),repeating-linear-gradient(90deg,transparent 0 23px,color-mix(in srgb,var(--line) 45%,transparent) 23px 24px);overflow-x:auto}
+#cv,#cover{display:block;box-shadow:0 1px 3px rgba(0,0,0,.18),0 8px 24px rgba(0,0,0,.08);border-radius:2px;max-width:none}
+#cv.edit{cursor:crosshair}
+.sheetfoot{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;padding:10px 12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.stats{font-family:var(--f-mono);font-size:12px}
+.legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:4px;vertical-align:-1px;border:1px solid rgba(0,0,0,.15)}
+.shelfhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.books{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-height:330px;overflow:auto}
+.books li{border:1px solid var(--line);border-radius:8px;padding:7px;display:flex;flex-direction:column;gap:4px;position:relative;background:var(--bg);min-width:0}
+.books img{width:100%;aspect-ratio:1;object-fit:contain;background:#fff;border-radius:4px;image-rendering:pixelated}
+.books .nm{font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.books .mt{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.books .x{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer;font-size:13px;line-height:1}
+.books .x:hover{color:var(--bad);border-color:var(--bad)}
+.bookmeta{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.bookmeta .okc{color:var(--ok)} .bookmeta .warnc{color:var(--warn)}
+.empty{color:var(--muted);font-size:13px;padding:8px 0}
+.modules{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.coverwrap{overflow-x:auto;display:flex;justify-content:center;background:var(--bg);border-radius:8px;padding:12px}
+.swatches{display:flex;gap:6px;flex-wrap:wrap}
+.swatches button{width:28px;height:28px;border-radius:7px;border:2px solid transparent;cursor:pointer}
+.swatches button[aria-pressed="true"]{border-color:var(--ink)}
+.specs{font-family:var(--f-mono);font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 14px}
+.specs b{color:var(--ink);font-weight:700}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.recipes{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.recipe{font:inherit;text-align:left;border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:var(--bg);color:var(--ink);cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.recipe[aria-pressed="true"]{border-color:var(--t-dfy);box-shadow:0 0 0 2px color-mix(in srgb,var(--t-dfy) 25%,transparent)}
+.recipe:disabled{opacity:.45;cursor:not-allowed}
+.recipe b{font-size:13px}
+.recipe span{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.progress{height:6px;background:var(--bg);border-radius:99px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--t-dfy);transition:width .15s}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 14px;border-radius:8px;font-weight:600;font-size:13px;z-index:10;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1><span class="px" aria-hidden="true"><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i></span>Nonogram Studio</h1>
+      <p class="tag">Turn any picture into a print-ready Nonogram puzzle book. A logic solver checks every puzzle, so your buyers always get exactly one answer.</p>
+    </div>
+    <div class="badges"><span class="badge">No AI</span><span class="badge">No API key</span><span class="badge">Runs in your browser</span></div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel">
+      <section class="step">
+        <h2><b>1</b>Pick a picture</h2>
+        <label class="f">Collection
+          <select id="coll">
+            <option value="starter" data-label="Starter pictures">Starter pictures</option>
+            <option value="nature" data-label="Vault: Nature &amp; food">Vault: Nature &amp; food</option>
+            <option value="letters" data-label="Vault: Letters A–Z">Vault: Letters A–Z</option>
+            <option value="numbers" data-label="Vault: Numbers 0–9">Vault: Numbers 0–9</option>
+          </select>
+        </label>
+        <div class="samples" id="samples"></div>
+        <label class="drop" id="drop" tabindex="0">
+          <input type="file" id="file" accept="image/*" multiple>
+          <strong>Upload images</strong> or drop them here<br>
+          <span class="note">Select several to batch-add them to your book</span>
+        </label>
+      </section>
+
+      <section class="step">
+        <h2><b>2</b>Tune the grid</h2>
+        <div class="row2">
+          <label class="f">Width (columns)
+            <select id="w"></select>
+          </label>
+          <label class="f">Height (rows)
+            <select id="h"></select>
+          </label>
+        </div>
+        <label class="f">Colors
+          <select id="colors">
+            <option value="1" data-label="Black &amp; white">Black &amp; white</option>
+            <option value="2" data-label="2 colors">2 colors</option>
+            <option value="3" data-label="3 colors">3 colors</option>
+            <option value="4" data-label="4 colors">4 colors</option>
+          </select>
+        </label>
+        <label class="f"><span class="rangehead"><span>Background cut-off</span><span id="thrv">150</span></span>
+          <input type="range" id="thr" min="20" max="240" value="150">
+        </label>
+        <label class="check"><input type="checkbox" id="inv"> Invert (fill the light areas)</label>
+        <label class="check"><input type="checkbox" id="clean" checked> Remove stray pixels</label>
+        <button class="btn" id="fix">Auto-fix to one solution</button>
+      </section>
+
+      <section class="step">
+        <h2><b>3</b>Build the book</h2>
+        <label class="f">Puzzle name<input type="text" id="title" value="Heart"></label>
+        <button class="btn primary" id="add">Add puzzle to book</button>
+        <label class="f">KDP trim size
+          <select id="trim"><option value="8.5x11" selected>8.5 × 11 in (Letter)</option><option value="8x10">8 × 10 in</option><option value="6x9">6 × 9 in</option></select>
+        </label>
+        <div class="sub">
+          <div class="subhead">Book layout</div>
+          <label class="f">Book title<input type="text" id="btitle" value="Picture Logic Puzzles"></label>
+          <label class="f">Subtitle<input type="text" id="bsub" value="Solver-checked Nonograms with one solution each"></label>
+          <label class="check"><input type="checkbox" id="o-title" checked> Title page</label>
+          <label class="check"><input type="checkbox" id="o-howto" checked> How-to-play page</label>
+          <label class="check"><input type="checkbox" id="o-large"> Large print</label>
+          <label class="check"><input type="checkbox" id="o-sort" checked> Order from easy to hard</label>
+          <label class="f">Puzzles per page
+            <select id="o-per"><option value="1" selected>1 per page</option><option value="2">2 per page</option><option value="4">4 per page (small grids)</option></select>
+          </label>
+          <p class="note">Inside margin grows with page count, following KDP gutter rules.</p>
+        </div>
+      </section>
+    </aside>
+
+    <div class="work">
+      <div class="sheet">
+        <div class="sheethead">
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" id="t-puzzle" aria-selected="true">Puzzle</button>
+            <button class="tab" role="tab" id="t-sol" aria-selected="false">Solution · click to edit</button>
+          </div>
+          <div class="chips" id="chips"></div>
+        </div>
+        <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+        <div class="sheetfoot">
+          <span class="stats" id="stats"></span>
+          <span class="legend" id="legend" hidden></span>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="shelfhead">
+          <h2>Your book <span class="note" id="bookcount"></span></h2>
+          <div class="presets">
+            <button class="btn sm" id="clearbook">Clear book</button>
+            <button class="btn primary sm" id="pdfbook">Export interior PDF</button>
+          </div>
+        </div>
+        <div class="bookmeta" id="bookmeta"></div>
+        <ul class="books" id="books"></ul>
+      </section>
+
+      <div class="modules">
+        <section class="card" id="covercard">
+          <h2>Cover Wizard</h2>
+          <div class="sub" style="border:0;padding:0">
+            <div class="grid2">
+              <label class="f">Paper
+                <select id="paper"><option value="white">White paper (B&amp;W)</option><option value="cream">Cream paper (B&amp;W)</option><option value="color">Premium color</option></select>
+              </label>
+              <label class="f">Cover color<div class="swatches" id="swatches"></div></label>
+            </div>
+            <label class="f">Back cover text<textarea id="backtext" rows="3">Every puzzle in this book was checked by a logic solver, so each one has exactly one solution and can be solved without guessing. Use the number clues to fill the grid and watch a hidden picture appear. Includes a how-to-play guide and full solutions at the back.</textarea></label>
+            <div class="specs" id="specs"></div>
+            <label class="check"><input type="checkbox" id="guides" checked> Show trim, spine and safe-zone guides</label>
+            <div class="coverwrap"><canvas id="cover"></canvas></div>
+            <div class="presets"><button class="btn primary" id="pdfcover">Export cover PDF</button></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>DFY Book Remix</h2>
+          <p class="note">Pick a ready-made book. The seed shuffles pictures, grid sizes and fonts, so two buyers never upload the same interior to KDP.</p>
+          <div class="sub" style="border:0;padding:0">
+            <div class="recipes" id="recipes"></div>
+            <div class="grid2">
+              <label class="f">Buyer seed<input type="text" id="seed" value="maple-427"></label>
+              <div style="display:flex;gap:8px;align-items:flex-end">
+                <button class="btn" id="newseed">New seed</button>
+                <button class="btn primary" id="build" style="flex:1">Build this book</button>
+              </div>
+            </div>
+            <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+            <label class="f">KDP listing (title, subtitle, description, 7 keywords)
+              <textarea id="listing" rows="8" placeholder="Build a book to get a ready-to-paste listing."></textarea>
+            </label>
+            <div class="presets"><button class="btn sm" id="copylist">Copy listing</button></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Branding &amp; play online</h2>
+          <div class="sub" style="border:0;padding:0">
+            <p class="note">Client license included: make and sell puzzle books for clients, or package your puzzles as PLR.</p>
+            <div class="sub">
+              <div class="subhead">White label</div>
+              <div class="grid2">
+                <label class="f">Your brand or publisher name<input type="text" id="brand" value="Maple Puzzle Press"></label>
+                <label class="f">Website<input type="text" id="site" value="maplepuzzles.com"></label>
+              </div>
+              <label class="check"><input type="checkbox" id="wl-on" checked> Put my brand on PDFs, covers and play pages</label>
+            </div>
+            <div class="subhead">Play online (HTML you can host as a game or lead magnet)</div>
+            <div class="presets">
+              <button class="btn" id="play1">Export this puzzle</button>
+              <button class="btn primary" id="playbook">Export whole book</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const PAPER = {ink:'#16191d', line:'#a7b0ba', clue:'#f2f5f8', clue2:'#e4e9ef', amb:'#f4b400', text:'#16191d', white:'#ffffff'};
+const LOCK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1Zm2 6H6V4.5a2 2 0 1 1 4 0V7Z"/></svg>';
+const state = {src:null, name:'Heart', W:15, Hsel:'auto', thr:150, invert:false, clean:true, colors:1, edits:new Map(), sizeKey:'', p:null, s:null, tab:'puzzle', book:[], coll:'starter', pic:'Heart', coverBg:'#1d3d6b', recipe:0};
+
+/* ================= Funnel ownership ================= */
+const own = {bump:true, oto1:'pro', oto2:'10', oto3:'full'}; // personal edition: everything unlocked
+const TIERS = {
+  vault:{label:'Picture Vault bump', price:'$9.95'},
+  pro:{label:'OTO1 Pro or Pro Lite', price:'$47 / $27'},
+  color:{label:'OTO1 Pro (full)', price:'$47'},
+  dfy:{label:'OTO2 DFY Books', price:'$37 / $17'},
+  play:{label:'OTO3 Agency or Agency Lite', price:'$97 / $67'},
+  wl:{label:'OTO3 Agency (full)', price:'$97'}
+};
+const can = () => ({vault:own.bump, pro:own.oto1!=='none', color:own.oto1==='pro', dfy:own.oto2!=='none', play:own.oto3!=='none', wl:own.oto3==='full'});
+function syncFunnelUI(){ $('#o-bump').value=own.bump?'1':'0'; $('#o-1').value=own.oto1; $('#o-2').value=own.oto2; $('#o-3').value=own.oto3; }
+function applyGates(){
+  const C=can();
+  document.querySelectorAll('[data-need]').forEach(el=>{
+    const need=el.dataset.need, ok=C[need];
+    if(el.tagName==='OPTION'){el.disabled=!ok;el.textContent=el.dataset.label+(ok?'':'  (locked)');return}
+    el.classList.toggle('locked',!ok);
+    el.querySelectorAll('input,select,button,textarea').forEach(i=>{if(!i.closest('.lockmsg')&&!i.closest('[data-need]:not([data-need="'+need+'"])'))i.disabled=!ok});
+    let m=el.querySelector(':scope > .lockmsg');
+    if(!ok){if(!m){m=document.createElement('div');m.className='lockmsg';el.prepend(m)}
+      m.innerHTML=`${LOCK}<span>Unlocks with <b>${TIERS[need].label}</b> · ${TIERS[need].price}</span><button class="linkbtn" data-unlock="${need}">Simulate purchase</button>`;m.hidden=false}
+    else if(m)m.hidden=true;
+  });
+  // nested gate inside an unlocked parent (white label inside agency) must re-evaluate after the parent
+  document.querySelectorAll('[data-need] [data-need]').forEach(el=>{const ok=C[el.dataset.need]&&C[el.closest('[data-need]:not(:scope)')?.dataset.need??el.dataset.need];
+    el.querySelectorAll('input,select,button,textarea').forEach(i=>{if(!i.closest('.lockmsg'))i.disabled=!ok})});
+  buildSizeOptions();
+}
+function clampToOwnership(){
+  const C=can();
+  if(!C.pro&&state.W>30){state.W=30}
+  if(!C.pro&&state.Hsel!=='auto'&&+state.Hsel>30)state.Hsel='auto';
+  if(!C.color&&state.colors>1){state.colors=1;$('#colors').value='1'}
+  if(!C.vault&&state.coll!=='starter'){state.coll='starter';$('#coll').value='starter';renderSamples();setPic('Heart')}
+}
+function ownershipChanged(){applyGates();clampToOwnership();$('#w').value=state.W;$('#h').value=state.Hsel;$('#inv').disabled=state.colors>1;rebuild();renderBook();renderRecipes()}
+
+
+/* ================= Picture library (all drawn in code) ================= */
+const C_RED='#c81d25',C_GRN='#2d6a4f',C_BLU='#1d3d6b',C_BRN='#7a4a22',C_ORG='#c4501f',C_GLD='#9a6a00',C_INK='#1f2328',C_PNK='#b5179e';
+const PICS = {
+  starter:{
+    Heart(x){x.fillStyle=C_RED;x.beginPath();x.moveTo(150,268);x.bezierCurveTo(40,190,8,130,40,80);x.bezierCurveTo(72,28,135,40,150,96);x.bezierCurveTo(165,40,228,28,260,80);x.bezierCurveTo(292,130,260,190,150,268);x.fill()},
+    Star(x){x.fillStyle=C_GLD;x.beginPath();for(let i=0;i<10;i++){const r=i%2?60:142,a=-Math.PI/2+i*Math.PI/5;x.lineTo(150+r*Math.cos(a),160+r*Math.sin(a))}x.closePath();x.fill()},
+    House(x){x.fillStyle=C_RED;x.beginPath();x.moveTo(25,145);x.lineTo(150,32);x.lineTo(275,145);x.fill();x.fillRect(200,50,32,70);x.fillStyle=C_BLU;x.fillRect(58,140,184,138);x.fillStyle=C_BRN;x.fillRect(128,196,46,82);x.fillStyle='#fff';x.fillRect(78,166,36,36);x.fillRect(190,166,36,36)},
+    Fish(x){x.fillStyle=C_ORG;x.beginPath();x.ellipse(132,150,100,64,0,0,Math.PI*2);x.fill();x.fillStyle=C_BLU;x.beginPath();x.moveTo(210,150);x.lineTo(288,82);x.lineTo(288,218);x.fill();x.fillStyle='#fff';x.beginPath();x.arc(82,132,14,0,Math.PI*2);x.fill();x.fillRect(150,100,10,100)},
+    Mug(x){x.fillStyle=C_BLU;x.strokeStyle=C_BLU;x.fillRect(55,110,160,140);x.lineWidth=24;x.beginPath();x.arc(215,178,40,-Math.PI/2,Math.PI/2);x.stroke();x.fillStyle=C_INK;x.fillRect(25,255,220,20);x.strokeStyle='#555b63';x.lineWidth=13;x.lineCap='round';for(const sx of[95,135,175]){x.beginPath();x.moveTo(sx,92);x.bezierCurveTo(sx-18,70,sx+18,52,sx,26);x.stroke()}},
+    Cat(x){x.fillStyle=C_INK;x.beginPath();x.ellipse(150,170,118,104,0,0,Math.PI*2);x.fill();x.beginPath();x.moveTo(42,140);x.lineTo(52,20);x.lineTo(132,78);x.fill();x.beginPath();x.moveTo(258,140);x.lineTo(248,20);x.lineTo(168,78);x.fill();x.fillStyle=C_GRN;x.beginPath();x.ellipse(106,158,18,24,0,0,Math.PI*2);x.ellipse(194,158,18,24,0,0,Math.PI*2);x.fill();x.fillStyle=C_PNK;x.beginPath();x.moveTo(132,200);x.lineTo(168,200);x.lineTo(150,220);x.fill()}
+  },
+  nature:{
+    Tree(x){const t=(a,b,c)=>{x.beginPath();x.moveTo(...a);x.lineTo(...b);x.lineTo(...c);x.fill()};x.fillStyle=C_GRN;t([150,14],[72,108],[228,108]);t([150,66],[48,176],[252,176]);t([150,122],[30,246],[270,246]);x.fillStyle=C_BRN;x.fillRect(128,240,44,50)},
+    Strawberry(x){x.fillStyle=C_RED;x.beginPath();x.moveTo(150,282);x.bezierCurveTo(60,230,30,130,70,92);x.bezierCurveTo(110,62,190,62,230,92);x.bezierCurveTo(270,130,240,230,150,282);x.fill();x.fillStyle='#fff';for(const [a,b] of[[110,130],[150,120],[190,130],[95,175],[135,165],[175,165],[205,180],[125,210],[170,210],[150,250]]){x.beginPath();x.ellipse(a,b,6,9,0,0,Math.PI*2);x.fill()}x.fillStyle=C_GRN;x.beginPath();x.moveTo(150,40);for(let i=0;i<7;i++){const a=Math.PI*(0.1+i*0.8/6);x.lineTo(150-Math.cos(a)*95,92-Math.sin(a)*22*(i%2?0.3:1.6))}x.closePath();x.fill();x.fillRect(143,14,14,40)},
+    Ladybug(x){x.fillStyle=C_RED;x.beginPath();x.arc(150,170,115,0,Math.PI*2);x.fill();x.fillStyle=C_INK;x.beginPath();x.arc(150,62,52,0,Math.PI*2);x.fill();x.fillRect(146,60,8,225);for(const [a,b,r] of[[95,140,22],[205,140,22],[90,210,18],[210,210,18],[120,250,14],[180,250,14]]){x.beginPath();x.arc(a,b,r,0,Math.PI*2);x.fill()}},
+    Mushroom(x){x.fillStyle=C_RED;x.beginPath();x.ellipse(150,140,135,100,0,Math.PI,0);x.fill();x.fillRect(15,138,270,14);x.fillStyle='#fff';for(const [a,b,r] of[[90,100,18],[150,70,20],[210,100,18],[120,125,12],[185,128,12]]){x.beginPath();x.arc(a,b,r,0,Math.PI*2);x.fill()}x.fillStyle=C_BRN;x.fillRect(110,152,80,130)},
+    Flower(x){x.fillStyle=C_GRN;x.fillRect(143,150,14,140);x.beginPath();x.ellipse(105,230,40,16,-0.5,0,Math.PI*2);x.ellipse(195,215,40,16,0.5,0,Math.PI*2);x.fill();x.fillStyle=C_PNK;for(let i=0;i<6;i++){const a=i*Math.PI/3;x.beginPath();x.ellipse(150+Math.cos(a)*60,105+Math.sin(a)*60,42,30,a,0,Math.PI*2);x.fill()}x.fillStyle=C_GLD;x.beginPath();x.arc(150,105,34,0,Math.PI*2);x.fill()},
+    Smile(x){x.fillStyle=C_GLD;x.beginPath();x.arc(150,150,135,0,Math.PI*2);x.fill();x.fillStyle='#fff';x.strokeStyle='#fff';x.beginPath();x.arc(103,112,20,0,Math.PI*2);x.arc(197,112,20,0,Math.PI*2);x.fill();x.lineWidth=20;x.lineCap='round';x.beginPath();x.arc(150,158,72,.18*Math.PI,.82*Math.PI);x.stroke()}
+  },
+  letters:{}, numbers:{}
+};
+const GLYPH_FONTS=['Arial Black, Arial, sans-serif','Georgia, serif','Impact, Arial, sans-serif','Courier New, monospace','Trebuchet MS, sans-serif','Verdana, sans-serif'];
+'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(ch=>PICS.letters['Letter '+ch]={glyph:ch});
+'0123456789'.split('').forEach(ch=>PICS.numbers['Number '+ch]={glyph:ch});
+function findPic(name){for(const k in PICS)if(PICS[k][name])return PICS[k][name];return null}
+function picCanvas(name,v={}){
+  const c=document.createElement('canvas');c.width=c.height=300;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,300,300);
+  if(v.mirror){x.translate(300,0);x.scale(-1,1)}
+  const pic=findPic(name);
+  if(pic&&pic.glyph){x.fillStyle=v.ink||C_BLU;x.textAlign='center';x.textBaseline='middle';x.font=`bold 270px ${v.font||GLYPH_FONTS[0]}`;x.fillText(pic.glyph,150,162)}
+  else if(pic)pic(x);
+  return c;
+}
+
+/* ================= Picture -> grid ================= */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const hex2=n=>Math.round(clamp(n,0,255)).toString(16).padStart(2,'0');
+function gridFromSource(src,o){
+  const sw=src.naturalWidth||src.width,sh=src.naturalHeight||src.height;
+  const W=o.W,H=o.Hsel==='auto'?clamp(Math.round(W*sh/sw),5,50):+o.Hsel,k=8;
+  const c=document.createElement('canvas');c.width=W*k;c.height=H*k;const x=c.getContext('2d',{willReadFrequently:true});
+  x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.imageSmoothingQuality='high';
+  const s=Math.min(c.width/sw,c.height/sh),dw=sw*s,dh=sh*s;x.drawImage(src,(c.width-dw)/2,(c.height-dh)/2,dw,dh);
+  const d=x.getImageData(0,0,c.width,c.height).data,N=W*H;const R=new Float32Array(N),G=new Float32Array(N),B=new Float32Array(N);
+  for(let y=0;y<c.height;y++)for(let xx=0;xx<c.width;xx++){const i=(y*c.width+xx)*4,j=((y/k)|0)*W+((xx/k)|0);R[j]+=d[i];G[j]+=d[i+1];B[j]+=d[i+2]}
+  const kk=k*k;for(let i=0;i<N;i++){R[i]/=kk;G[i]/=kk;B[i]/=kk}
+  const L=i=>0.299*R[i]+0.587*G[i]+0.114*B[i];
+  const g=new Uint8Array(N);let palette=[PAPER.ink];
+  if(o.colors<=1){for(let i=0;i<N;i++){let on=L(i)<o.thr;if(o.invert)on=!on;g[i]=on?1:0}}
+  else{
+    const pts=[];for(let i=0;i<N;i++)if(L(i)<o.thr)pts.push(i);
+    if(pts.length){
+      const dist=(i,c)=>(R[i]-c[0])**2+(G[i]-c[1])**2+(B[i]-c[2])**2;
+      let dark=pts[0];for(const i of pts)if(L(i)<L(dark))dark=i;
+      const cents=[[R[dark],G[dark],B[dark]]];
+      while(cents.length<o.colors){let best=-1,bd=-1;for(const i of pts){const m=Math.min(...cents.map(c=>dist(i,c)));if(m>bd){bd=m;best=i}}if(bd<900)break;cents.push([R[best],G[best],B[best]])}
+      const asg=new Int32Array(N).fill(-1);
+      for(let it=0;it<10;it++){
+        const acc=cents.map(()=>[0,0,0,0]);
+        for(const i of pts){let b=0,bd=Infinity;cents.forEach((c,ci)=>{const dd=dist(i,c);if(dd<bd){bd=dd;b=ci}});asg[i]=b;const a=acc[b];a[0]+=R[i];a[1]+=G[i];a[2]+=B[i];a[3]++}
+        acc.forEach((a,ci)=>{if(a[3])cents[ci]=[a[0]/a[3],a[1]/a[3],a[2]/a[3]]});
+      }
+      const used=[...new Set(pts.map(i=>asg[i]))].sort((a,b)=>{const la=0.299*cents[a][0]+0.587*cents[a][1]+0.114*cents[a][2],lb=0.299*cents[b][0]+0.587*cents[b][1]+0.114*cents[b][2];return la-lb});
+      const remap=new Map(used.map((ci,n)=>[ci,n+1]));
+      palette=used.map(ci=>'#'+cents[ci].map(hex2).join(''));
+      for(const i of pts)g[i]=remap.get(asg[i]);
+    }
+  }
+  if(o.clean)despeckle(g,W,H);
+  return{W,H,g,palette};
+}
+function despeckle(g,W,H){
+  const o=g.slice();const at=(r,c)=>r>=0&&r<H&&c>=0&&c<W?o[r*W+c]:0;
+  for(let r=0;r<H;r++)for(let c=0;c<W;c++){
+    const i=r*W+c;let n8=0;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if((dr||dc)&&at(r+dr,c+dc))n8++;
+    if(o[i]&&n8===0)g[i]=0;
+    else if(!o[i]){const n=[at(r-1,c),at(r+1,c),at(r,c-1),at(r,c+1)];if(n[0]&&n.every(v=>v===n[0]))g[i]=n[0]}
+  }
+}
+function runs(arr){const out=[];let c=0,n=0;for(const v of arr){if(v&&v===c)n++;else{if(c)out.push([n,c]);c=v;n=v?1:0}}if(c)out.push([n,c]);return out}
+function makePuzzle(W,H,g,palette){
+  const rowClues=[],colClues=[];
+  for(let r=0;r<H;r++)rowClues.push(runs(g.subarray(r*W,r*W+W)));
+  for(let c=0;c<W;c++){const col=[];for(let r=0;r<H;r++)col.push(g[r*W+c]);colClues.push(runs(col))}
+  return{W,H,g,palette,rowClues,colClues,maxR:Math.max(1,...rowClues.map(a=>a.length)),maxC:Math.max(1,...colClues.map(a=>a.length))};
+}
+
+/* ================= Logic solver (multi-color, line-by-line, no guessing) ================= */
+// Each cell holds a bitmask of still-possible values: bit 0 = empty, bit c = color c.
+function solveLine(cells,clues){
+  const n=cells.length,k=clues.length,S=k+1;
+  const no0=new Int32Array(n+1);for(let i=0;i<n;i++)no0[i+1]=no0[i]+((cells[i]&1)?0:1);
+  const bad={};for(const [,c] of clues){if(bad[c])continue;const a=new Int32Array(n+1),bit=1<<c;for(let i=0;i<n;i++)a[i+1]=a[i]+((cells[i]&bit)?0:1);bad[c]=a}
+  const F=new Uint8Array((n+1)*S);
+  for(let i=n;i>=0;i--)for(let j=k;j>=0;j--){
+    let v=0;
+    if(j===k)v=no0[n]-no0[i]===0?1:0;
+    else{
+      if(i<n&&(cells[i]&1)&&F[(i+1)*S+j])v=1;
+      if(!v){const [L,c]=clues[j];
+        if(i+L<=n&&bad[c][i+L]-bad[c][i]===0){
+          const gap=j+1<k&&clues[j+1][1]===c;
+          if(gap){if(i+L<n&&(cells[i+L]&1)&&F[(i+L+1)*S+j+1])v=1}
+          else if(F[(i+L)*S+j+1])v=1;
+        }}
+    }
+    F[i*S+j]=v;
+  }
+  if(!F[0])return null;
+  const Rr=new Uint8Array((n+1)*S),cm=new Int32Array(n);Rr[0]=1;
+  for(let i=0;i<=n;i++)for(let j=0;j<=k;j++){
+    if(!Rr[i*S+j])continue;
+    if(j===k){for(let t=i;t<n;t++)cm[t]|=1;continue}
+    if(i<n&&(cells[i]&1)&&F[(i+1)*S+j]){cm[i]|=1;Rr[(i+1)*S+j]=1}
+    const [L,c]=clues[j];
+    if(i+L<=n&&bad[c][i+L]-bad[c][i]===0){
+      const gap=j+1<k&&clues[j+1][1]===c,bit=1<<c;
+      if(gap){if(i+L<n&&(cells[i+L]&1)&&F[(i+L+1)*S+j+1]){for(let t=i;t<i+L;t++)cm[t]|=bit;cm[i+L]|=1;Rr[(i+L+1)*S+j+1]=1}}
+      else if(F[(i+L)*S+j+1]){for(let t=i;t<i+L;t++)cm[t]|=bit;Rr[(i+L)*S+j+1]=1}
+    }
+  }
+  const out=new Int32Array(n);
+  for(let t=0;t<n;t++){out[t]=cells[t]&cm[t];if(!out[t])return null}
+  return out;
+}
+function solve(p){
+  const {W,H}=p,K=p.palette.length,all=(1<<(K+1))-1;const st=new Int32Array(W*H).fill(all);
+  const rd=new Uint8Array(H).fill(1),cd=new Uint8Array(W).fill(1);let rounds=0,any=true;
+  while(any){
+    any=false;rounds++;
+    for(let r=0;r<H;r++){if(!rd[r])continue;rd[r]=0;const line=st.slice(r*W,r*W+W);const res=solveLine(line,p.rowClues[r]);if(!res)return{bad:true,und:W*H};
+      for(let c=0;c<W;c++)if(res[c]!==line[c]){st[r*W+c]=res[c];cd[c]=1;any=true}}
+    for(let c=0;c<W;c++){if(!cd[c])continue;cd[c]=0;const line=new Int32Array(H);for(let r=0;r<H;r++)line[r]=st[r*W+c];const res=solveLine(line,p.colClues[c]);if(!res)return{bad:true,und:W*H};
+      for(let r=0;r<H;r++)if(res[r]!==line[r]){st[r*W+c]=res[r];rd[r]=1;any=true}}
+    if(rounds>600)break;
+  }
+  let und=0;for(const v of st)if(v&(v-1))und++;
+  return{st,und,rounds:rounds-1,unique:und===0};
+}
+const score=(s,p)=>s.unique?s.rounds/Math.sqrt(p.W*p.H/225):99;
+const diffName=v=>v<=5?'Easy':v<=9?'Medium':v<99?'Hard':'Not unique';
+function fixGrid(W,H,g,palette,maxIt=30,maxCand=36,onFlip){
+  g=g.slice();let flips=0;
+  const nb=i=>{const r=(i/W)|0,c=i%W;for(const [dr,dc] of[[0,1],[0,-1],[1,0],[-1,0]]){const rr=r+dr,cc=c+dc;if(rr>=0&&rr<H&&cc>=0&&cc<W&&g[rr*W+cc])return g[rr*W+cc]}return 1};
+  for(let it=0;it<maxIt;it++){
+    const s=solve(makePuzzle(W,H,g,palette));if(s.unique)break;
+    const und=[];s.st.forEach((v,i)=>{if(v&(v-1))und.push(i)});
+    const step=Math.max(1,Math.ceil(und.length/maxCand)),cand=und.filter((_,i)=>i%step===0);
+    let best=null;
+    for(const i of cand){const old=g[i];g[i]=old?0:nb(i);const t=solve(makePuzzle(W,H,g,palette));if(!t.bad&&(!best||t.und<best.und))best={i,v:g[i],und:t.und};g[i]=old}
+    if(!best)break;g[best.i]=best.v;flips++;onFlip&&onFlip(best.i,best.v);
+  }
+  return{g,flips};
+}
+
+/* ================= Drawing (shared by canvas and PDF) ================= */
+const FONTS={mono:'"JetBrains Mono", Consolas, monospace',display:'"Bricolage Grotesque", "Segoe UI", sans-serif',body:'Archivo, "Segoe UI", sans-serif'};
+function inkOn(hex){const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return(0.299*r+0.587*g+0.114*b)>150?'#16191d':'#ffffff'}
+function shade(hex,a){const n=parseInt(hex.slice(1),16);return'#'+[n>>16,n>>8&255,n&255].map(v=>hex2(a<0?v*(1+a):v+(255-v)*a)).join('')}
+function drawPuzzle(R,p,x0,y0,cell,o){
+  const color=p.palette.length>1,cu=cell*0.8,mr=o.clues===false?0:p.maxR,mc=o.clues===false?0:p.maxC;
+  const gx=x0+mr*cu,gy=y0+mc*cu,gw=p.W*cell,gh=p.H*cell;
+  R.rect(gx,gy,gw,gh,PAPER.white);
+  if(mr){R.rect(x0,gy,mr*cu,gh,PAPER.clue);R.rect(gx,y0,gw,mc*cu,PAPER.clue);
+    for(let b=5;b<p.H;b+=10)R.rect(x0,gy+b*cell,mr*cu,Math.min(5,p.H-b)*cell,PAPER.clue2);
+    for(let b=5;b<p.W;b+=10)R.rect(gx+b*cell,y0,Math.min(5,p.W-b)*cell,mc*cu,PAPER.clue2)}
+  if(o.solution)for(let r=0;r<p.H;r++)for(let c=0;c<p.W;c++){
+    const i=r*p.W+c,v=p.g[i];if(o.reveal&&!o.reveal(r,c))continue;
+    const amb=o.st&&(o.st[i]&(o.st[i]-1));
+    if(amb){R.rect(gx+c*cell,gy+r*cell,cell,cell,PAPER.amb);if(v)R.rect(gx+(c+.25)*cell,gy+(r+.25)*cell,cell*.5,cell*.5,p.palette[v-1])}
+    else if(v)R.rect(gx+c*cell,gy+r*cell,cell,cell,p.palette[v-1]);
+  }
+  for(let c=0;c<=p.W;c++){const th=c%5===0||c===p.W;R.line(gx+c*cell,th&&mc?y0:gy,gx+c*cell,gy+gh,th?o.thick:o.thin,th?PAPER.ink:PAPER.line)}
+  for(let r=0;r<=p.H;r++){const th=r%5===0||r===p.H;R.line(th&&mr?x0:gx,gy+r*cell,gx+gw,gy+r*cell,th?o.thick:o.thin,th?PAPER.ink:PAPER.line)}
+  if(mr){
+    const fs=cell*(o.fs||0.56);
+    const clue=(v,col,cx,cy,bw,bh)=>{if(color&&col){const pc=p.palette[col-1];R.rect(cx-bw*.42,cy-bh*.4,bw*.84,bh*.8,pc);R.text(v,cx,cy,fs,inkOn(pc))}else R.text(v,cx,cy,fs,PAPER.text)};
+    p.rowClues.forEach((cl,r)=>{const a=cl.length?cl:[[0,0]];a.forEach(([v,col],k)=>clue(v,col,gx-(a.length-k-0.5)*cu,gy+(r+0.5)*cell,cu,cell))});
+    p.colClues.forEach((cl,c)=>{const a=cl.length?cl:[[0,0]];a.forEach(([v,col],k)=>clue(v,col,gx+(c+0.5)*cell,gy-(a.length-k-0.5)*cu,cell,cu))});
+  }
+  return{gx,gy,w:mr*cu+gw,h:mc*cu+gh};
+}
+function wrapLines(x,t,w){const out=[];for(const para of String(t).split('\n')){let line='';for(const word of para.split(' ')){const test=line?line+' '+word:word;if(x.measureText(test).width>w&&line){out.push(line);line=word}else line=test}out.push(line)}return out}
+function canvasR(x){return{
+  rect(a,b,w,h,c){x.fillStyle=c;x.fillRect(a,b,w,h)},
+  line(a,b,c,d,w,col,dash){x.save();x.strokeStyle=col;x.lineWidth=w;if(dash)x.setLineDash(dash);x.beginPath();x.moveTo(a,b);x.lineTo(c,d);x.stroke();x.restore()},
+  text(s,a,b,size,col,o={}){x.save();x.fillStyle=col;x.font=`${o.weight||700} ${size}px ${FONTS[o.font||'mono']}`;x.textAlign=o.align||'center';x.textBaseline='middle';
+    if(o.angle){x.translate(a,b);x.rotate(o.angle*Math.PI/180);x.fillText(String(s),0,0)}else x.fillText(String(s),a,b+size*0.04);x.restore()},
+  para(t,a,b,w,size,col,lh=1.4,o={}){x.save();x.fillStyle=col;x.font=`${o.weight||400} ${size}px ${FONTS[o.font||'body']}`;x.textAlign=o.align||'left';x.textBaseline='top';
+    const lines=wrapLines(x,t,w);lines.forEach((l,i)=>x.fillText(l,o.align==='center'?a+w/2:a,b+i*size*lh));x.restore();return lines.length*size*lh}
+}}
+function pdfR(doc){const setF=o=>doc.setFont('helvetica',(o.weight||700)>=600?'bold':'normal');return{
+  rect(a,b,w,h,c){doc.setFillColor(c);doc.rect(a,b,w,h,'F')},
+  line(a,b,c,d,w,col,dash){doc.setDrawColor(col);doc.setLineWidth(w);if(dash)doc.setLineDashPattern(dash,0);doc.line(a,b,c,d);if(dash)doc.setLineDashPattern([],0)},
+  text(s,a,b,size,col,o={}){setF(o);doc.setFontSize(size);doc.setTextColor(col);s=String(s);
+    if(o.angle===90){const tw=doc.getTextWidth(s);doc.text(s,a-size*0.35,b-tw/2,{angle:-90});return}
+    doc.text(s,a,b,{align:o.align||'center',baseline:'middle'})},
+  para(t,a,b,w,size,col,lh=1.4,o={}){setF({weight:o.weight||400});doc.setFontSize(size);doc.setTextColor(col);
+    const lines=doc.splitTextToSize(String(t),w);lines.forEach((l,i)=>doc.text(l,o.align==='center'?a+w/2:a,b+i*size*lh,{align:o.align||'left',baseline:'top'}));return lines.length*size*lh}
+}}
+
+/* ================= Editor pipeline ================= */
+function rebuild(){
+  const base=gridFromSource(state.src,state);
+  const key=base.W+'x'+base.H+'|'+base.palette.join();if(key!==state.sizeKey){state.edits.clear();state.sizeKey=key}
+  for(const [i,v] of state.edits)base.g[i]=Math.min(v,base.palette.length);
+  state.p=makePuzzle(base.W,base.H,base.g,base.palette);state.s=solve(state.p);
+  render();
+}
+function render(){
+  const p=state.p,s=state.s,cv=$('#cv'),stage=$('#stage');
+  const pad=Math.max(10,Math.min(24,stage.clientWidth*0.03));
+  const uw=p.W+p.maxR*0.8,uh=p.H+p.maxC*0.8;
+  const cell=Math.max(6,Math.min(30,(stage.clientWidth-32-pad*2)/uw,(Math.min(innerHeight*0.72,720)-pad*2)/uh));
+  const w=uw*cell+pad*2,h=uh*cell+pad*2,dpr=devicePixelRatio||1;
+  cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);cv.style.width=w+'px';cv.style.height=h+'px';
+  const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.fillStyle=PAPER.white;x.fillRect(0,0,w,h);
+  const sol=state.tab==='sol';
+  const {gx,gy}=drawPuzzle(canvasR(x),p,pad,pad,cell,{solution:sol,st:sol?s.st:null,thin:1,thick:2});
+  state.hit={gx,gy,cell};cv.classList.toggle('edit',sol);
+  const lg=$('#legend');lg.hidden=!sol;
+  lg.innerHTML=p.palette.map((c,i)=>`<span><i style="background:${c}"></i>${p.palette.length>1?'Color '+(i+1):'Filled'}</span>`).join('')+`<span><i style="background:${PAPER.amb}"></i>Undecided by logic</span>`;
+  const filled=p.g.reduce((a,b)=>a+(b?1:0),0);
+  const chips=[];
+  if(!filled)chips.push('<span class="chip warn">Empty grid: raise the cut-off</span>');
+  else if(s.unique)chips.push('<span class="chip ok">✓ One unique solution</span>');
+  else chips.push(`<span class="chip warn">${s.und} cells undecided: not unique yet</span>`);
+  if(filled&&s.unique)chips.push(`<span class="chip">${diffName(score(s,p))}</span>`);
+  if(p.palette.length>1)chips.push(`<span class="chip">${p.palette.length} colors</span>`);
+  $('#chips').innerHTML=chips.join('');
+  $('#stats').textContent=`${p.W} × ${p.H} · ${filled} filled (${Math.round(filled/(p.W*p.H)*100)}%) · ${s.rounds||0} logic passes${state.edits.size?` · ${state.edits.size} edits`:''}`;
+  $('#fix').disabled=!filled||s.unique;
+}
+function autoFix(){
+  const btn=$('#fix');btn.disabled=true;btn.textContent='Fixing…';
+  setTimeout(()=>{const p=state.p;const r=fixGrid(p.W,p.H,p.g,p.palette,30,36,(i,v)=>state.edits.set(i,v));
+    btn.textContent='Auto-fix to one solution';rebuild();
+    toast(state.s.unique?`Fixed by changing ${r.flips} cell${r.flips===1?'':'s'}`:'Could not fully fix. Try another size or cut-off.')},30);
+}
+
+/* ================= Book ================= */
+const TRIMS={'8.5x11':[612,792],'8x10':[576,720],'6x9':[432,648]};
+function thumb(p){const c=document.createElement('canvas'),k=4;c.width=p.W*k;c.height=p.H*k;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);for(let i=0;i<p.g.length;i++)if(p.g[i]){x.fillStyle=p.palette[p.g[i]-1];x.fillRect((i%p.W)*k,((i/p.W)|0)*k,k,k)}return c.toDataURL()}
+function bookItem(name,p,s){s=s||solve(p);return{name,p,unique:s.unique,score:score(s,p),thumb:thumb(p)}}
+function addToBook(name){const p=state.p;state.book.push(bookItem(name||'Puzzle',makePuzzle(p.W,p.H,p.g.slice(),p.palette.slice()),state.s));renderBook()}
+function bookOpts(){
+  const C=can(),pro=C.pro;
+  return{pro,trim:$('#trim').value,title:$('#btitle').value.trim()||'Picture Logic Puzzles',subtitle:$('#bsub').value.trim(),
+    titlePage:pro&&$('#o-title').checked,howTo:pro&&$('#o-howto').checked,large:pro&&$('#o-large').checked,sort:pro&&$('#o-sort').checked,perPage:pro?+$('#o-per').value:1,
+    brand:C.wl&&$('#wl-on').checked?{name:$('#brand').value.trim(),site:$('#site').value.trim()}:null};
+}
+const pageCount=(n,o)=>n?(o.titlePage?1:0)+(o.howTo?1:0)+Math.ceil(n/o.perPage)+Math.ceil(n/4):0;
+const gutterIn=pages=>pages<=150?0.375:pages<=300?0.5:pages<=500?0.625:pages<=700?0.75:0.875;
+function saveBook(){try{localStorage.setItem('ns-book',JSON.stringify(state.book.map(b=>({n:b.name,W:b.p.W,H:b.p.H,g:Array.from(b.p.g),pal:b.p.palette}))));localStorage.setItem('ns-meta',JSON.stringify({t:$('#btitle').value,s:$('#bsub').value,trim:$('#trim').value,brand:$('#brand').value,site:$('#site').value,bg:state.coverBg}))}catch(e){}}
+function loadBook(){try{const a=JSON.parse(localStorage.getItem('ns-book')||'null');if(!Array.isArray(a)||!a.length)return false;state.book=a.map(o=>bookItem(o.n,makePuzzle(o.W,o.H,Uint8Array.from(o.g),o.pal)));const m=JSON.parse(localStorage.getItem('ns-meta')||'{}');if(m.t)$('#btitle').value=m.t;if(m.s)$('#bsub').value=m.s;if(m.trim)$('#trim').value=m.trim;if(m.brand)$('#brand').value=m.brand;if(m.site)$('#site').value=m.site;if(m.bg)state.coverBg=m.bg;return true}catch(e){return false}}
+function renderBook(){saveBook();
+  const ul=$('#books'),n=state.book.length,o=bookOpts(),pages=pageCount(n,o);
+  $('#bookcount').textContent=n?`· ${n} puzzle${n>1?'s':''}`:'';
+  $('#bookmeta').innerHTML=n?`${pages} pages · ${pages>=24?'<span class="okc">meets the KDP 24-page minimum</span>':'<span class="warnc">KDP paperbacks need at least 24 pages</span>'}${!o.pro&&n>50?' · <span class="warnc">FE books hold 50 puzzles</span>':''}`:'';
+  if(!n){ul.innerHTML='<li class="empty" style="border:0;background:none">No puzzles yet. Add the current one, upload several images, or build a DFY book.</li>';renderCover();return}
+  ul.innerHTML=state.book.map((b,i)=>`<li><button class="x" data-i="${i}" aria-label="Remove ${esc(b.name)}">×</button><img src="${b.thumb}" alt=""><span class="nm">${i+1}. ${esc(b.name)}</span><span class="mt">${b.p.W}×${b.p.H} · ${b.unique?diffName(b.score):'⚠ not unique'}</span></li>`).join('');
+  renderCover();
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function orderedBook(o){let items=state.book.slice();if(!o.pro)items=items.slice(0,50);if(o.sort)items.sort((a,b)=>a.score-b.score);return items}
+
+const HOWTO_G=Uint8Array.from([0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,0,0,0,1,0,0]);
+function buildBookPDF(items,o){
+  const [PW,PH]=TRIMS[o.trim];const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:[PW,PH],orientation:'p'}),R=pdfR(doc);
+  const total=pageCount(items.length,o);
+  const inside=(o.pro?gutterIn(total)+0.2:0.6)*72,outside=(o.pro?0.5:0.6)*72,top=0.6*72,bot=0.6*72;
+  let pg=0;const newPage=()=>{if(pg)doc.addPage();pg++;const recto=pg%2===1;return{L:recto?inside:outside,Rm:recto?outside:inside}};
+  const footer=m=>{R.text(String(pg),PW/2,PH-bot/2,9,'#666666',{weight:400});if(o.brand&&o.brand.name)R.text(o.brand.name+(o.brand.site?' · '+o.brand.site:''),pg%2?PW-m.Rm:m.L,PH-bot/2,7.5,'#888888',{weight:400,align:pg%2?'right':'left'})};
+  const big=o.large?1.15:1;
+  if(o.titlePage){const m=newPage(),w=PW-m.L-m.Rm;let y=PH*0.2;
+    y+=R.para(o.title,m.L,y,w,30*big,PAPER.ink,1.15,{align:'center',weight:700});y+=10;
+    if(o.subtitle)y+=R.para(o.subtitle,m.L,y,w,13*big,'#444444',1.4,{align:'center'});
+    const p=items[0]&&items[0].p;if(p){const box=Math.min(w*0.55,PH*0.3),cell=box/Math.max(p.W,p.H);drawPuzzle(R,p,m.L+(w-p.W*cell)/2,y+30,cell,{solution:true,clues:false,thin:0.2,thick:0.6})}
+    R.text(`${items.length} puzzles · Solutions included`,PW/2,PH*0.8,11*big,'#444444',{weight:400});
+    if(o.brand&&o.brand.name)R.text('Published by '+o.brand.name,PW/2,PH*0.8+20,10,'#666666',{weight:400});
+  }
+  if(o.howTo){const m=newPage(),w=PW-m.L-m.Rm;let y=top+10;
+    R.text('How to Play',m.L,y,22*big,PAPER.ink,{align:'left'});y+=28;
+    const color=items.some(b=>b.p.palette.length>1);
+    const rules=['The numbers beside each row and above each column give the lengths of the filled runs in that line, in order from left to right and top to bottom.','Two runs of the same color always have at least one empty cell between them.'+(color?' In color puzzles each number is printed in its color, and runs of different colors may touch.':''),'Mark cells you know are empty with a small X. You never need to guess: every puzzle in this book was checked by a solver and has exactly one solution.','When you finish, the filled cells reveal a hidden picture. Check your answer in the Solutions section at the back.'];
+    rules.forEach((t,i)=>{R.text(String(i+1),m.L+8,y+7*big,11*big,PAPER.ink,{});y+=R.para(t,m.L+24,y,w-24,11*big,'#333333',1.45)+10});
+    const ex=makePuzzle(5,5,HOWTO_G,[PAPER.ink]),cell=Math.min(22,w/16);y+=12;
+    R.text('Example',m.L,y,11*big,'#666666',{align:'left',weight:400});y+=14;
+    const a=drawPuzzle(R,ex,m.L,y,cell,{thin:0.4,thick:1.1});
+    R.text('→',m.L+a.w+cell*1.2,y+a.h/2,18,'#888888',{weight:400});
+    drawPuzzle(R,ex,m.L+a.w+cell*2.4,y,cell,{solution:true,thin:0.4,thick:1.1});
+    footer(m);
+  }
+  const slots=(a,n)=>{const g=16;if(n===1)return[a];if(n===2){const h=(a.h-g)/2;return[{...a,h},{...a,y:a.y+h+g,h}]}
+    const w=(a.w-g)/2,h=(a.h-g)/2;return[{x:a.x,y:a.y,w,h},{x:a.x+w+g,y:a.y,w,h},{x:a.x,y:a.y+h+g,w,h},{x:a.x+w+g,y:a.y+h+g,w,h}]};
+  for(let s=0;s<items.length;s+=o.perPage){
+    const m=newPage(),area={x:m.L,y:top,w:PW-m.L-m.Rm,h:PH-top-bot-12};
+    slots(area,o.perPage).forEach((sl,k)=>{const b=items[s+k];if(!b)return;const p=b.p,n=s+k+1,one=o.perPage===1;
+      R.text(`Puzzle ${n}`,sl.x,sl.y+8,(one?18:12)*big,PAPER.ink,{align:'left'});
+      R.text(`${diffName(b.score)} · ${p.W} × ${p.H}${p.palette.length>1?' · '+p.palette.length+' colors':''}`,sl.x+sl.w,sl.y+8,(one?10:8)*big,'#666666',{align:'right',weight:400});
+      const hh=one?30:20,uw=p.W+p.maxR*0.8,uh=p.H+p.maxC*0.8,cell=Math.min(sl.w/uw,(sl.h-hh)/uh,o.large?34:28);
+      drawPuzzle(R,p,sl.x+(sl.w-uw*cell)/2,sl.y+hh+(sl.h-hh-uh*cell)/2,cell,{thin:0.35,thick:1.1,fs:o.large?0.62:0.56});
+    });footer(m);
+  }
+  for(let s=0;s<items.length;s+=4){
+    const m=newPage(),area={x:m.L,y:top+28,w:PW-m.L-m.Rm,h:PH-top-bot-40};
+    R.text('Solutions',m.L,top+6,18*big,PAPER.ink,{align:'left'});
+    slots(area,4).forEach((sl,k)=>{const b=items[s+k];if(!b)return;const p=b.p;
+      R.text(`Puzzle ${s+k+1}: ${b.name}`,sl.x,sl.y+6,9.5*big,'#333333',{align:'left'});
+      const cell=Math.min(sl.w/p.W,(sl.h-18)/p.H);drawPuzzle(R,p,sl.x+(sl.w-p.W*cell)/2,sl.y+16,cell,{solution:true,clues:false,thin:0.25,thick:0.7});
+    });footer(m);
+  }
+  return doc;
+}
+
+/* ================= Cover Wizard ================= */
+const PAPERS={white:0.002252,cream:0.0025,color:0.002347};
+const SWATCHES=['#1d3d6b','#0f766e','#8b2f12','#16191d','#b45309','#6b21a8'];
+function coverDims(){const o=bookOpts(),[tw,th]=TRIMS[o.trim],pages=Math.max(24,pageCount(state.book.length,o)),spine=pages*PAPERS[$('#paper').value]*72,b=9;return{tw,th,spine,b,pages,W:2*b+2*tw+spine,H:2*b+th}}
+function drawCover(R,d,guides){
+  const o=bookOpts(),bg=state.coverBg,ink=inkOn(bg),{tw,th,spine,b}=d,fx=b+tw+spine,pad=0.55*72;
+  R.rect(0,0,d.W,d.H,bg);R.rect(b+tw,0,spine,d.H,shade(bg,-0.25));
+  if(d.pages>=79)R.text(o.title,b+tw+spine/2,d.H/2,Math.min(spine*0.5,13),ink,{angle:90,font:'display',weight:800});
+  const tx=fx+pad,tW=tw-2*pad;let y=b+0.75*72;
+  y+=R.para(o.title,tx,y,tW,Math.min(34,tw/11),ink,1.08,{align:'center',font:'display',weight:800});y+=8;
+  if(o.subtitle)y+=R.para(o.subtitle,tx,y,tW,12,ink,1.35,{align:'center',weight:500});
+  const p=state.book[0]?state.book[0].p:state.p,bottom=b+th-1.05*72,avail=bottom-(y+18);
+  if(p&&avail>60){const uw=p.W+p.maxR*0.8,uh=p.H+p.maxC*0.8,cell=Math.min((tW-20)/uw,(avail-20)/uh),cw=uw*cell+20,ch=uh*cell+20,cx=fx+(tw-cw)/2,cy=y+18+(avail-ch)/2;
+    R.rect(cx,cy,cw,ch,'#ffffff');drawPuzzle(R,p,cx+10,cy+10,cell,{solution:true,reveal:(r,c)=>r+c<(p.W+p.H)*0.55,thin:0.4,thick:1.1})}
+  R.text(`${state.book.length||1} PUZZLES · SOLUTIONS INCLUDED`,fx+tw/2,b+th-0.65*72,10.5,ink,{font:'body',weight:700});
+  const bx=b+pad,bW=tw-2*pad;let by=b+0.85*72;
+  by+=R.para('Picture logic puzzles with exactly one answer',bx,by,bW,15,ink,1.2,{font:'display',weight:800})+10;
+  R.para($('#backtext').value,bx,by,bW,10.5,ink,1.5,{weight:400});
+  const bw=2*72,bh=1.2*72,bxx=b+tw-0.25*72-bw,byy=b+th-0.25*72-bh;R.rect(bxx,byy,bw,bh,'#ffffff');R.text('Barcode area',bxx+bw/2,byy+bh/2,7,'#9aa3ad',{font:'body',weight:400});
+  if(o.brand&&o.brand.name)R.text(o.brand.name+(o.brand.site?' · '+o.brand.site:''),bx,b+th-0.55*72,9.5,ink,{align:'left',font:'body',weight:700});
+  if(guides){const g='#ff3b6b';R.line(b,0,b,d.H,0.8,g,[4,3]);R.line(d.W-b,0,d.W-b,d.H,0.8,g,[4,3]);R.line(0,b,d.W,b,0.8,g,[4,3]);R.line(0,d.H-b,d.W,d.H-b,0.8,g,[4,3]);
+    R.line(b+tw,0,b+tw,d.H,0.8,'#00b3ff',[2,2]);R.line(fx,0,fx,d.H,0.8,'#00b3ff',[2,2]);
+    const sz=9+9;[[b+9,b+9,tw-18],[fx+9,b+9,tw-18]].forEach(([x,y,w])=>{R.line(x,y,x+w,y,0.5,'#22c55e',[1,2]);R.line(x,y+th-sz,x+w,y+th-sz,0.5,'#22c55e',[1,2]);R.line(x,y,x,y+th-sz,0.5,'#22c55e',[1,2]);R.line(x+w,y,x+w,y+th-sz,0.5,'#22c55e',[1,2])})}
+}
+function renderCover(){
+  if(!$('#cover'))return;const d=coverDims(),cv=$('#cover'),wrap=cv.parentElement;
+  const sc=Math.min((wrap.clientWidth-24)/d.W,1.1),dpr=devicePixelRatio||1;
+  cv.width=Math.round(d.W*sc*dpr);cv.height=Math.round(d.H*sc*dpr);cv.style.width=d.W*sc+'px';cv.style.height=d.H*sc+'px';
+  const x=cv.getContext('2d');x.setTransform(sc*dpr,0,0,sc*dpr,0,0);drawCover(canvasR(x),d,$('#guides').checked);
+  const inch=v=>(v/72).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+  $('#specs').innerHTML=`<span>Full cover <b>${inch(d.W)} × ${inch(d.H)} in</b></span><span>Spine <b>${inch(d.spine)} in</b></span><span>Pages <b>${d.pages}</b></span><span>Spine text <b>${d.pages>=79?'allowed':'not allowed under 79 pages'}</b></span><span>Bleed <b>0.125 in</b></span>`;
+}
+
+/* ================= DFY Remix (OTO2) ================= */
+const RECIPES=[
+  {id:'abc',name:'Alphabet Nonograms',set:'letters',sizes:[15],count:26,aud:'Adults & Teens'},
+  {id:'zoo',name:'Animal & Garden Picross',set:'pictures',sizes:[15,20],count:24,aud:'Adults'},
+  {id:'kids',name:'My First Nonograms',set:'easy',sizes:[10],count:30,aud:'Kids Ages 8–12',large:true},
+  {id:'num',name:'Number Nonograms 0–9',set:'numbers',sizes:[10,15],count:20,aud:'Kids & Beginners'},
+  {id:'cg',name:'Color Garden Nonograms',set:'pictures',sizes:[15,20],count:24,aud:'Adults',color:3},
+  {id:'abcbig',name:'Alphabet Big Grids',set:'letters',sizes:[25,30],count:26,aud:'Puzzle Fans'},
+  {id:'lp',name:'Large Print Picture Puzzles',set:'pictures',sizes:[10,15],count:24,aud:'Seniors',large:true},
+  {id:'mega',name:'Letters & Numbers Mega Pack',set:'alnum',sizes:[15,20,25],count:36,aud:'Adults & Teens'},
+  {id:'chal',name:'Big Picture Challenge',set:'pictures',sizes:[30,35,40],count:24,aud:'Expert Solvers'},
+  {id:'cpx',name:'Color Pixel Art Puzzles',set:'pictures',sizes:[20,25],count:24,aud:'Adults',color:4}
+];
+function setNames(set){const P=Object.keys({...PICS.starter,...PICS.nature}),Lt=Object.keys(PICS.letters),N=Object.keys(PICS.numbers);
+  return set==='pictures'?P:set==='letters'?Lt:set==='numbers'?N:set==='alnum'?[...Lt,...N]:[...P,...Lt.slice(0,12)]}
+function hash(s){let h=1779033703^s.length;for(let i=0;i<s.length;i++){h=Math.imul(h^s.charCodeAt(i),3432918353);h=h<<13|h>>>19}return h>>>0}
+function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const pick=(rng,a)=>a[Math.floor(rng()*a.length)];
+function shuffle(rng,a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function renderRecipes(){
+  const lim=own.oto2==='5'?5:10;
+  $('#recipes').innerHTML=RECIPES.map((r,i)=>`<button class="recipe" data-r="${i}" aria-pressed="${i===state.recipe}" ${i>=lim||!can().dfy?'disabled':''}><b>${esc(r.name)}</b><span>${r.count} puzzles · ${r.sizes.join('/')} grid${r.color?' · '+r.color+' colors':''}${r.large?' · large print':''}</span>${i>=lim&&can().dfy?'<span>Full 10-book pack only</span>':''}</button>`).join('');
+}
+$('#recipes').addEventListener('click',e=>{const b=e.target.closest('.recipe');if(!b||b.disabled)return;state.recipe=+b.dataset.r;renderRecipes()});
+const SEEDW=['maple','harbor','copper','willow','cedar','ember','lumen','sable','juniper','quartz','meadow','atlas'];
+$('#newseed').onclick=()=>{$('#seed').value=SEEDW[Math.floor(Math.random()*SEEDW.length)]+'-'+(100+Math.floor(Math.random()*900))};
+async function buildDFY(){
+  const rc=RECIPES[state.recipe],seed=$('#seed').value.trim()||'seed',rng=mulberry32(hash(seed+'|'+rc.id));
+  const names=setNames(rc.set);let order=[];while(order.length<rc.count)order=order.concat(shuffle(rng,names));order=order.slice(0,rc.count);
+  const btn=$('#build');btn.disabled=true;const items=[];
+  for(let i=0;i<order.length;i++){
+    btn.textContent=`Building ${i+1} / ${order.length}…`;$('#prog').style.width=((i+1)/order.length*100)+'%';
+    await new Promise(r=>setTimeout(r,0));
+    const nm=order[i],glyph=findPic(nm)&&findPic(nm).glyph;
+    const v={mirror:!glyph&&rng()<0.5,font:pick(rng,GLYPH_FONTS),ink:pick(rng,[C_BLU,C_RED,C_GRN,C_INK])};
+    const W=pick(rng,rc.sizes),thr=Math.round(150+(rng()-0.5)*30);
+    const base=gridFromSource(picCanvas(nm,v),{W,Hsel:'auto',thr,invert:false,colors:rc.color||1,clean:true});
+    const fx=fixGrid(base.W,base.H,base.g,base.palette,W>=30?10:25,W>=30?8:24);
+    const p=makePuzzle(base.W,base.H,fx.g,base.palette);items.push(bookItem(nm,p));
+  }
+  items.sort((a,b)=>a.score-b.score);
+  state.book=items;
+  $('#btitle').value=rc.name;$('#bsub').value=`${items.length} ${rc.color?'Color ':''}Picture Logic Puzzles for ${rc.aud} with Full Solutions`;
+  if(can().pro){$('#o-large').checked=!!rc.large;$('#o-per').value='1'}
+  $('#listing').value=makeListing(rc,items,rng);$('#backtext').value=state.listingDesc;
+  btn.disabled=false;btn.textContent='Build this book';renderBook();toast(`Built "${rc.name}": ${items.length} puzzles, all unique`);
+}
+function makeListing(rc,items,rng){
+  const n=items.length,sizes=[...new Set(items.map(b=>b.p.W+'×'+b.p.H))].slice(0,3).join(', '),col=rc.color?'Color ':'';
+  const sub=pick(rng,[`${n} ${col}Picture Logic Puzzles for ${rc.aud}: Griddlers, Hanjie and Picross with Full Solutions`,`${n} Solver-Checked ${col}Nonograms (${sizes}) for ${rc.aud}, Each With Exactly One Solution`,`${n} ${col}Paint-by-Number Logic Puzzles for ${rc.aud}, Easy to Hard, Solutions Included`]);
+  const open=pick(rng,['Love logic puzzles that end with a picture?','Looking for a relaxing brain workout that pays off with a hidden image?','Ready for puzzles that reward logic, not luck?']);
+  const desc=`${open} ${rc.name} brings you ${n} hand-picked ${col.toLowerCase()}nonogram puzzles, ordered from easy to hard. Each one was checked by a solver, so it has exactly one solution and you never need to guess.\n\nInside you will find:\n• ${n} puzzles in ${sizes} grids${rc.large?', printed large and easy to read':''}\n• A clear how-to-play page with a worked example\n• Full solutions at the back of the book\n\nA thoughtful gift for ${rc.aud.toLowerCase()} who enjoy Sudoku, crosswords and pixel art.`;
+  const pool=['nonogram puzzle book','picross puzzles for adults','griddlers logic puzzles','hanjie puzzle book','pixel art logic puzzles','paint by number logic puzzles','japanese crossword puzzles','picture logic puzzle book','brain games for adults','logic puzzles gift'];
+  if(rc.large)pool.unshift('large print logic puzzles');if(/Kids/.test(rc.aud))pool.unshift('nonograms for kids');if(rc.color)pool.unshift('color nonogram puzzle book');
+  const kw=[...new Set(pool)].slice(0,4).concat(shuffle(rng,[...new Set(pool)].slice(4)).slice(0,3));
+  state.listingDesc=desc.split('\n')[0];
+  return `TITLE\n${rc.name}\n\nSUBTITLE\n${sub}\n\nDESCRIPTION\n${desc}\n\nKEYWORDS (7)\n${kw.map((k,i)=>`${i+1}. ${k}`).join('\n')}`;
+}
+$('#build').onclick=buildDFY;
+$('#copylist').onclick=async()=>{const t=$('#listing');try{await navigator.clipboard.writeText(t.value);toast('Listing copied')}catch(e){t.select();toast('Press Ctrl+C to copy')}};
+
+/* ================= Play online export (OTO3) ================= */
+function playHTML(items,o){
+  const data=items.map((b,i)=>({t:`Puzzle ${i+1}`,W:b.p.W,H:b.p.H,r:b.p.rowClues,c:b.p.colClues,pal:b.p.palette,s:Array.from(b.p.g)}));
+  const json=JSON.stringify(data).replace(/</g,'\\u003c');
+  const brand=o.brand&&o.brand.name?esc(o.brand.name)+(o.brand.site?' · '+esc(o.brand.site):''):'Made with Nonogram Studio';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(o.title)}</title><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:16px;background:#f4f6f8;color:#16191d;display:flex;flex-direction:column;align-items:center;gap:12px}
+h1{font-size:20px;margin:4px 0}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+button,select{font:inherit;padding:6px 10px;border:1px solid #c5ccd3;border-radius:6px;background:#fff;cursor:pointer}
+.pal button{width:30px;height:30px;padding:0}.pal button.on{outline:3px solid #1d4ed8;outline-offset:2px}
+.wrap{max-width:100%;overflow:auto}table{border-collapse:collapse;user-select:none}
+td{padding:0;text-align:center;font:700 11px ui-monospace,monospace;min-width:18px;height:20px}
+td.cl{background:#eef1f4;padding:0 3px}td.c{width:22px;height:22px;border:1px solid #b5bdc5;background:#fff;cursor:pointer;color:#9aa3ad}
+td.r5{border-right:2px solid #16191d}td.b5{border-bottom:2px solid #16191d}#msg{font-weight:700;min-height:1.4em}footer{font-size:12px;color:#5a6570}
+</style></head><body><h1>${esc(o.title)}</h1>
+<div class="bar"><select id="sel"></select><button id="chk">Check</button><button id="clr">Clear</button><button id="rev">Show solution</button></div>
+<div class="bar pal" id="pal"></div><div class="wrap" id="board"></div><div id="msg"></div>
+<p style="font-size:12px;color:#5a6570;margin:0">Click to fill. Right-click to mark an empty cell.</p><footer>${brand}</footer>
+<script>var D=${json},P,cur,act=1,$=function(i){return document.getElementById(i)};
+D.forEach(function(p,i){$('sel').add(new Option(p.t+' ('+p.W+'x'+p.H+')',i))});$('sel').onchange=function(){load(+this.value)};
+function load(i){P=D[i];cur=new Array(P.W*P.H).fill(0);act=1;pal();draw();$('msg').textContent=''}
+function pal(){var el=$('pal');el.innerHTML='';if(P.pal.length<2)return;P.pal.forEach(function(c,k){var b=document.createElement('button');b.style.background=c;b.className=k+1===act?'on':'';b.setAttribute('aria-label','Color '+(k+1));b.onclick=function(){act=k+1;pal()};el.appendChild(b)})}
+function cl(v){if(!v)return'<td class="cl"></td>';var col=P.pal.length>1?P.pal[v[1]-1]:'#16191d';return'<td class="cl" style="color:'+col+'">'+v[0]+'</td>'}
+function draw(){var mr=Math.max(1,...P.r.map(function(a){return a.length})),mc=Math.max(1,...P.c.map(function(a){return a.length})),h='<table>';
+for(var y=0;y<mc;y++){h+='<tr>';for(var x=0;x<mr;x++)h+='<td></td>';for(var c=0;c<P.W;c++){var a=P.c[c].length?P.c[c]:[[0,0]],k=y-(mc-a.length);h+=cl(k>=0?a[k]:null)}h+='</tr>'}
+for(var r=0;r<P.H;r++){h+='<tr>';var a=P.r[r].length?P.r[r]:[[0,0]];for(var x=0;x<mr;x++){var k=x-(mr-a.length);h+=cl(k>=0?a[k]:null)}
+for(var c=0;c<P.W;c++)h+='<td class="c'+((c+1)%5===0&&c<P.W-1?' r5':'')+((r+1)%5===0&&r<P.H-1?' b5':'')+'" data-i="'+(r*P.W+c)+'"></td>';h+='</tr>'}
+$('board').innerHTML=h+'</table>';paint()}
+function paint(){document.querySelectorAll('td.c').forEach(function(td){var v=cur[+td.dataset.i];td.style.background=v>0?P.pal[v-1]:'#fff';td.textContent=v<0?'\\u00d7':''})}
+$('board').addEventListener('click',function(e){var td=e.target.closest('td.c');if(!td)return;var i=+td.dataset.i;cur[i]=cur[i]===act?0:act;paint();$('msg').textContent=''});
+$('board').addEventListener('contextmenu',function(e){var td=e.target.closest('td.c');if(!td)return;e.preventDefault();var i=+td.dataset.i;cur[i]=cur[i]<0?0:-1;paint()});
+$('chk').onclick=function(){var bad=0;for(var i=0;i<cur.length;i++)if(Math.max(cur[i],0)!==P.s[i])bad++;$('msg').textContent=bad?'Not yet: keep going!':'Solved! Well done.'};
+$('clr').onclick=function(){load(+$('sel').value)};$('rev').onclick=function(){cur=P.s.slice();paint()};load(0);
+<\/script></body></html>`;
+}
+
+/* ================= Downloads ================= */
+let dlp=null;const getDl=()=>dlp||(dlp=window.claude?.use?window.claude.use('downloads').catch(()=>null):Promise.resolve(null));
+async function download(blob,name){
+  const dl=await getDl();
+  if(dl){try{await dl.save({filename:name,data:blob});toast('Saved '+name)}catch(e){if(e&&e.code!=='declined')toast('Download is not available here')}return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)}
+const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'puzzle';
+function toast(msg){document.querySelectorAll('.toast').forEach(t=>t.remove());const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800)}
+const jsPdfReady=()=>{if(!window.jspdf){toast('The PDF library did not load. Check your connection and reload.');return false}return true};
+
+/* ================= Inputs ================= */
+function buildSizeOptions(){
+  const pro=can().pro,ws=[10,15,20,25,30,35,40,45,50];
+  $('#w').innerHTML=ws.map(v=>`<option value="${v}" ${v>30&&!pro?'disabled':''}>${v}${v>30?(pro?'':'  (locked)'):''}</option>`).join('');
+  $('#h').innerHTML='<option value="auto">Match picture</option>'+ws.map(v=>`<option value="${v}" ${v>30&&!pro?'disabled':''}>${v}${v>30?(pro?'':'  (locked)'):''}</option>`).join('');
+  $('#w').value=state.W;$('#h').value=state.Hsel;
+}
+function renderSamples(){
+  const box=$('#samples');box.innerHTML='';
+  for(const k of Object.keys(PICS[state.coll])){const b=document.createElement('button');b.dataset.k=k;b.title=k;b.setAttribute('aria-label',`Use ${k}`);b.setAttribute('aria-pressed',String(k===state.pic));
+    const t=document.createElement('canvas');t.width=t.height=60;t.getContext('2d').drawImage(picCanvas(k),0,0,60,60);const im=document.createElement('img');im.src=t.toDataURL();im.alt='';b.appendChild(im);
+    b.onclick=()=>setPic(k);box.appendChild(b)}
+}
+function setPic(k){state.pic=k;setSource(picCanvas(k),k);document.querySelectorAll('#samples button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===k)))}
+function setSource(src,name){state.src=src;state.name=name;$('#title').value=name;state.sizeKey='';rebuild()}
+function loadFile(f){return new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>ok(im);im.onerror=no;im.src=r.result};r.onerror=no;r.readAsDataURL(f)})}
+async function handleFiles(files){
+  files=[...files].filter(f=>f.type.startsWith('image/'));if(!files.length)return;state.pic=null;
+  document.querySelectorAll('#samples button').forEach(b=>b.setAttribute('aria-pressed','false'));
+  for(const f of files){try{const im=await loadFile(f);setSource(im,f.name.replace(/\.[^.]+$/,''));if(files.length>1){if(!state.s.unique)autoFixSilent();addToBook(state.name)}}catch(e){toast(`Could not read ${f.name}`)}}
+  if(files.length>1)toast(`Added ${files.length} puzzles to your book`);
+}
+function autoFixSilent(){const p=state.p;fixGrid(p.W,p.H,p.g,p.palette,25,24,(i,v)=>state.edits.set(i,v));rebuild()}
+$('#coll').onchange=e=>{state.coll=e.target.value;renderSamples();setPic(Object.keys(PICS[state.coll])[0])};
+$('#file').onchange=e=>{handleFiles(e.target.files);e.target.value=''};
+const drop=$('#drop');
+drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#file').click()}});
+for(const el of[drop,$('#stage')]){
+  el.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});
+  el.addEventListener('dragleave',()=>drop.classList.remove('over'));
+  el.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');handleFiles(e.dataTransfer.files)});
+}
+$('#w').onchange=e=>{state.W=+e.target.value;rebuild()};
+$('#h').onchange=e=>{state.Hsel=e.target.value;rebuild()};
+$('#colors').onchange=e=>{state.colors=+e.target.value;$('#inv').disabled=state.colors>1;if(state.colors>1){state.invert=false;$('#inv').checked=false}rebuild()};
+$('#thr').oninput=e=>{state.thr=+e.target.value;$('#thrv').textContent=e.target.value;state.edits.clear();rebuild()};
+$('#inv').onchange=e=>{state.invert=e.target.checked;state.edits.clear();rebuild()};
+$('#clean').onchange=e=>{state.clean=e.target.checked;state.edits.clear();rebuild()};
+$('#fix').onclick=autoFix;
+const setTab=t=>{state.tab=t;$('#t-puzzle').setAttribute('aria-selected',t==='puzzle');$('#t-sol').setAttribute('aria-selected',t==='sol');render()};
+$('#t-puzzle').onclick=()=>setTab('puzzle');$('#t-sol').onclick=()=>setTab('sol');
+$('#cv').addEventListener('click',e=>{
+  if(state.tab!=='sol')return;const r=e.currentTarget.getBoundingClientRect(),{gx,gy,cell}=state.hit,p=state.p;
+  const c=Math.floor((e.clientX-r.left-gx)/cell),rw=Math.floor((e.clientY-r.top-gy)/cell);
+  if(c<0||rw<0||c>=p.W||rw>=p.H)return;const i=rw*p.W+c;state.edits.set(i,(p.g[i]+1)%(p.palette.length+1));rebuild();
+});
+$('#add').onclick=()=>{if(!can().pro&&state.book.length>=50){toast('FE books hold 50 puzzles. Pro removes the limit.');return}addToBook($('#title').value.trim()||state.name);toast('Added to book')};
+$('#clearbook').onclick=()=>{state.book=[];renderBook()};
+$('#books').addEventListener('click',e=>{const b=e.target.closest('.x');if(!b)return;state.book.splice(+b.dataset.i,1);renderBook()});
+['#trim','#btitle','#bsub','#o-title','#o-howto','#o-large','#o-sort','#o-per','#brand','#site','#wl-on'].forEach(s=>$(s).addEventListener('input',renderBook));
+['#paper','#guides','#backtext'].forEach(s=>$(s).addEventListener('input',renderCover));
+$('#swatches').innerHTML=SWATCHES.map(c=>`<button style="background:${c}" data-c="${c}" aria-label="Cover color ${c}" aria-pressed="${c===state.coverBg}"></button>`).join('');
+$('#swatches').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;state.coverBg=b.dataset.c;$('#swatches').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));renderCover()});
+$('#pdfbook').onclick=()=>{if(!state.book.length){toast('Add at least one puzzle first');return}if(!jsPdfReady())return;const o=bookOpts();download(buildBookPDF(orderedBook(o),o).output('blob'),slug(o.title)+'-interior.pdf')};
+$('#pdfcover').onclick=()=>{if(!jsPdfReady())return;const d=coverDims(),{jsPDF}=window.jspdf;const doc=new jsPDF({unit:'pt',format:[d.W,d.H],orientation:d.W>d.H?'l':'p'});drawCover(pdfR(doc),d,false);download(doc.output('blob'),slug(bookOpts().title)+'-cover.pdf')};
+$('#play1').onclick=()=>{const p=state.p;const o=bookOpts();download(new Blob([playHTML([{p}],{...o,title:$('#title').value||'Nonogram'})],{type:'text/html'}),slug($('#title').value)+'-play.html')};
+$('#playbook').onclick=()=>{if(!state.book.length){toast('Add at least one puzzle first');return}const o=bookOpts();download(new Blob([playHTML(orderedBook(o),o)],{type:'text/html'}),slug(o.title)+'-play.html')};
+let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{render();renderCover()},120)});
+
+/* ================= Start: a realistic starter book ================= */
+applyGates();renderSamples();renderRecipes();
+if(!loadBook())for(const k of['House','Fish','Cat','Tree','Strawberry','Mug']){
+  const base=gridFromSource(picCanvas(k),{W:15,Hsel:'auto',thr:150,invert:false,colors:1,clean:true});
+  const fx=fixGrid(base.W,base.H,base.g,base.palette);state.book.push(bookItem(k,makePuzzle(base.W,base.H,fx.g,base.palette)));
+}
+$('#swatches').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.c===state.coverBg)));
+setPic('Heart');renderBook();
+document.fonts&&document.fonts.ready.then(()=>{render();renderCover()});
+</script>

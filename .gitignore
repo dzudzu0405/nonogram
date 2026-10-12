@@ -1,0 +1,6 @@
+# Secrets and local data — never commit
+config.php
+storage/*
+!storage/.htaccess
+dist/
+.claude/
