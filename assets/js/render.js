@@ -68,8 +68,29 @@
       },
     };
   }
+  /* PDF font: Roboto (Apache 2.0), embedded in the file. KDP needs embedded fonts, and the built-in
+     Helvetica cannot print Vietnamese or other non-Latin-1 names. Loaded once, on the first export. */
+  const FONT_URL = 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/roboto@0.2.3/';
+  let pdfFonts = null;
+  async function loadPdfFonts() {
+    if (pdfFonts) return pdfFonts;
+    const get = async f => {
+      const r = await fetch(FONT_URL + f); if (!r.ok) throw new Error('font ' + r.status);
+      const b = new Uint8Array(await r.arrayBuffer()); let s = '';
+      for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+      return btoa(s);
+    };
+    const [normal, bold] = await Promise.all([get('Roboto_400Regular.ttf'), get('Roboto_700Bold.ttf')]);
+    return (pdfFonts = { normal, bold });
+  }
   function pdfR(doc) {
-    const setF = o => doc.setFont('helvetica', (o.weight || 700) >= 600 ? 'bold' : 'normal');
+    let fam = 'helvetica';
+    if (pdfFonts) {
+      doc.addFileToVFS('Roboto-Regular.ttf', pdfFonts.normal); doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+      doc.addFileToVFS('Roboto-Bold.ttf', pdfFonts.bold); doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
+      fam = 'Roboto';
+    }
+    const setF = o => doc.setFont(fam, (o.weight || 700) >= 600 ? 'bold' : 'normal');
     return {
       rect(a, b, w, h, c) { doc.setFillColor(c); doc.rect(a, b, w, h, 'F'); },
       line(a, b, c, d, w, col, dash) { doc.setDrawColor(col); doc.setLineWidth(w); if (dash) doc.setLineDashPattern(dash, 0); doc.line(a, b, c, d); if (dash) doc.setLineDashPattern([], 0); },
@@ -95,11 +116,22 @@
     return c.toDataURL();
   }
 
-  /** Puzzle pages (one per page) followed by solutions, four per page. items: [{name, p, score}] */
+  /** Puzzle page layout, shared by the PDF and the editor's print-size warning. */
+  const MARGIN = 0.6 * 72, MIN_CELL_MM = 4, MIN_FONT_PT = 6;
+  function printLayout(p, page) {
+    const [PW, PH] = PAGES[page] || PAGES.letter;
+    const uw = p.W + p.maxR * 0.8, uh = p.H + p.maxC * 0.8, bw = PW - 2 * MARGIN, bh = PH - 2 * MARGIN - 40;
+    const cell = Math.min(bw / uw, bh / uh, 28), mm = cell * 25.4 / 72, font = cell * 0.56;
+    return { uw, uh, bw, bh, cell, mm, font, small: mm < MIN_CELL_MM || font < MIN_FONT_PT };
+  }
+
+  /** Puzzle pages (one per page) followed by solutions, four per page. items: [{name, p, score}]
+      Call loadPdfFonts() first to embed Roboto; without it the PDF falls back to Helvetica. */
   function buildPDF(items, opts) {
     const [PW, PH] = PAGES[opts.page] || PAGES.letter;
-    const doc = new window.jspdf.jsPDF({ unit: 'pt', format: [PW, PH], orientation: 'p' }), R = pdfR(doc);
-    const M = 0.6 * 72; let pg = 0;
+    // putOnlyUsedFonts: otherwise jsPDF lists all 14 standard fonts (not embedded), which print checks flag.
+    const doc = new window.jspdf.jsPDF({ unit: 'pt', format: [PW, PH], orientation: 'p', putOnlyUsedFonts: true }), R = pdfR(doc);
+    const M = MARGIN; let pg = 0;
     const newPage = () => { if (pg) doc.addPage(); pg++; };
     const footer = () => R.text(String(pg), PW / 2, PH - M / 2, 9, '#666666', { weight: 400 });
     items.forEach((b, n) => {
@@ -107,8 +139,7 @@
       const p = b.p;
       R.text(`Puzzle ${n + 1}`, M, M + 4, 18, PAPER.ink, { align: 'left' });
       R.text(`${E.level(b.score)} · ${p.W} × ${p.H}${p.palette.length > 1 ? ' · ' + p.palette.length + ' colors' : ''}`, PW - M, M + 4, 10, '#666666', { align: 'right', weight: 400 });
-      const uw = p.W + p.maxR * 0.8, uh = p.H + p.maxC * 0.8, bw = PW - 2 * M, bh = PH - 2 * M - 40;
-      const cell = Math.min(bw / uw, bh / uh, 28);
+      const { uw, uh, bw, bh, cell } = printLayout(p, opts.page);
       drawPuzzle(R, p, M + (bw - uw * cell) / 2, M + 30 + (bh - uh * cell) / 2, cell, { thin: 0.35, thick: 1.1 });
       footer();
     });
@@ -127,5 +158,5 @@
     return doc;
   }
 
-  window.Render = { PAPER, PAGES, inkOn, shade, drawPuzzle, canvasR, pdfR, thumb, buildPDF };
+  window.Render = { PAPER, PAGES, MIN_CELL_MM, inkOn, shade, drawPuzzle, canvasR, pdfR, thumb, printLayout, loadPdfFonts, buildPDF };
 })();

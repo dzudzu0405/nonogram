@@ -10,16 +10,31 @@
   const hex2 = n => Math.round(clamp(n, 0, 255)).toString(16).padStart(2, '0');
 
   /* ---------- Picture -> grid (browser only: needs a canvas) ---------- */
-  // o: {W, Hsel ('auto' | number), thr, invert, colors (1-4), clean, contrast (-100..100), brightness (-100..100)}
+  /** Grid size for a picture. 'auto' height follows the picture; if that is taller than the plan allows
+      (o.max), the width shrinks instead so the picture keeps its shape. Returns {W, H, fitted}. */
+  function gridSize(sw, sh, o) {
+    const max = o.max || 50;
+    let W = clamp(o.W, 5, max), H, fitted = false;
+    if (o.Hsel === 'auto') {
+      H = Math.round(W * sh / sw);
+      if (H > max) { W = clamp(Math.round(max * sw / sh), 5, max); H = max; fitted = W !== o.W; }
+      H = clamp(H, 5, max);
+    } else H = clamp(+o.Hsel, 5, max);
+    return { W, H, fitted };
+  }
+
+  // o: {W, Hsel ('auto' | number), max, thr, invert, colors (1-4), clean, contrast (-100..100), brightness (-100..100)}
   function gridFromSource(src, o) {
     const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
-    const W = o.W, H = o.Hsel === 'auto' ? clamp(Math.round(W * sh / sw), 5, 50) : +o.Hsel, k = 8;
+    const { W, H, fitted } = gridSize(sw, sh, o), k = 8;
     const c = document.createElement('canvas'); c.width = W * k; c.height = H * k;
     const x = c.getContext('2d', { willReadFrequently: true });
     x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = 'high';
     const s = Math.min(c.width / sw, c.height / sh), dw = sw * s, dh = sh * s;
-    x.drawImage(src, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+    const box = { x: Math.round((c.width - dw) / 2), y: Math.round((c.height - dh) / 2), w: Math.round(dw), h: Math.round(dh) };
+    x.drawImage(src, box.x, box.y, dw, dh);
     const d = x.getImageData(0, 0, c.width, c.height).data, N = W * H;
+    if ((o.colors || 1) > 1) return Object.assign(quantizeColor(d, c.width, W, H, k, box, o), { fitted });
     const R = new Float32Array(N), G = new Float32Array(N), B = new Float32Array(N);
     for (let y = 0; y < c.height; y++) for (let xx = 0; xx < c.width; xx++) {
       const i = (y * c.width + xx) * 4, j = ((y / k) | 0) * W + ((xx / k) | 0);
@@ -31,7 +46,92 @@
       G[i] = clamp((G[i] / kk - 128) * ct + 128 + br, 0, 255);
       B[i] = clamp((B[i] / kk - 128) * ct + 128 + br, 0, 255);
     }
-    return quantize({ W, H, R, G, B }, o);
+    return Object.assign(quantize({ W, H, R, G, B }, o), { fitted });
+  }
+
+  /* Color pictures: work per pixel, not per cell average, so cells on an edge do not become a blended
+     extra color. Background = the picture's own border color (not assumed white); a pixel is drawn when it
+     differs enough from it (so light colors such as yellow are kept). Each cell takes its majority color. */
+  function lab(r, g, b) {
+    const f = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const R = f(r), G = f(g), B = f(b);
+    const X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+    const t = v => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116);
+    return [116 * t(Y) - 16, 500 * (t(X) - t(Y)), 200 * (t(Y) - t(Z))];
+  }
+  const dE = (a, b) => Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+
+  function quantizeColor(d, cw, W, H, k, box, o) {
+    const ct = 1 + (o.contrast || 0) / 100, br = (o.brightness || 0) * 1.28;
+    const adj = v => clamp((v - 128) * ct + 128 + br, 0, 255);
+    const P = W * H * k * k, L = new Float32Array(P * 3), RGB = new Uint8Array(P * 3), inside = new Uint8Array(P);
+    for (let p = 0; p < P; p++) {
+      const px = p % cw, py = (p / cw) | 0, i = p * 4;
+      const r = adj(d[i]), g = adj(d[i + 1]), b = adj(d[i + 2]), l = lab(r, g, b);
+      RGB[p * 3] = r; RGB[p * 3 + 1] = g; RGB[p * 3 + 2] = b; L[p * 3] = l[0]; L[p * 3 + 1] = l[1]; L[p * 3 + 2] = l[2];
+      inside[p] = px >= box.x && px < box.x + box.w && py >= box.y && py < box.y + box.h ? 1 : 0;
+    }
+    const at = p => [L[p * 3], L[p * 3 + 1], L[p * 3 + 2]];
+    // Background: median of the picture's outer ring.
+    const ring = [];
+    for (let p = 0; p < P; p++) {
+      if (!inside[p]) continue;
+      const px = p % cw - box.x, py = ((p / cw) | 0) - box.y;
+      if (px < 2 || py < 2 || px >= box.w - 2 || py >= box.h - 2) ring.push(p);
+    }
+    const med = ch => { const v = ring.map(p => L[p * 3 + ch]).sort((a, b) => a - b); return v.length ? v[v.length >> 1] : [100, 0, 0][ch]; };
+    const bg = [med(0), med(1), med(2)];
+    // Cut-off slider (20-240, higher = more filled) -> how different from the background a pixel must be.
+    const T = 8 + (240 - o.thr) * 0.2;
+    const fg = new Uint8Array(P), pts = [];
+    for (let p = 0; p < P; p++) if (inside[p] && dE(at(p), bg) > T) { fg[p] = 1; pts.push(p); }
+    const g = new Uint8Array(W * H);
+    if (!pts.length) return { W, H, g, palette: [INK] };
+
+    // Centers: farthest-point start, then k-means in Lab on a sample of drawn pixels.
+    const step = Math.max(1, Math.floor(pts.length / 6000)), sample = pts.filter((_, i) => i % step === 0);
+    let cents = [at(sample.reduce((a, p) => (dE(at(p), bg) > dE(at(a), bg) ? p : a), sample[0]))];
+    while (cents.length < o.colors) {
+      let best = -1, bd = -1;
+      for (const p of sample) { const m = Math.min(...cents.map(c => dE(at(p), c))); if (m > bd) { bd = m; best = p; } }
+      if (bd < 15) break; // remaining pixels are near an existing color
+      cents.push(at(best));
+    }
+    const nearest = (l, cs) => { let b = 0, bd = Infinity; cs.forEach((c, ci) => { const v = dE(l, c); if (v < bd) { bd = v; b = ci; } }); return b; };
+    for (let it = 0; it < 8; it++) {
+      const acc = cents.map(() => [0, 0, 0, 0]);
+      for (const p of sample) { const a = acc[nearest(at(p), cents)]; a[0] += L[p * 3]; a[1] += L[p * 3 + 1]; a[2] += L[p * 3 + 2]; a[3]++; }
+      // Drop colors that cover almost nothing; they are usually edge pixels.
+      cents = acc.filter(a => a[3] >= sample.length * 0.015).map(a => [a[0] / a[3], a[1] / a[3], a[2] / a[3]]);
+    }
+    // Vote per cell: background (0) or one of the colors (1..K).
+    // Each color also keeps a coarse histogram of its pixels: the palette uses the most common shade, so
+    // when the picture has more colors than asked for, the palette shows a real color, not a blend.
+    const K = cents.length, votes = new Uint16Array(W * H * (K + 1)), hist = cents.map(() => new Map());
+    for (let p = 0; p < P; p++) {
+      const cell = ((((p / cw) | 0) / k) | 0) * W + (((p % cw) / k) | 0);
+      let lbl = 0;
+      if (fg[p]) {
+        const ci = nearest(at(p), cents), r = RGB[p * 3], gg = RGB[p * 3 + 1], b = RGB[p * 3 + 2], key = (r >> 4) << 8 | (gg >> 4) << 4 | (b >> 4);
+        const h = hist[ci], e = h.get(key); if (e) { e[0] += r; e[1] += gg; e[2] += b; e[3]++; } else h.set(key, [r, gg, b, 1]);
+        lbl = ci + 1;
+      }
+      votes[cell * (K + 1) + lbl]++;
+    }
+    const sum = hist.map(h => { let best = [0, 0, 0, 1], n = 0; for (const e of h.values()) if (e[3] > n) { n = e[3]; best = e; } return best; });
+    for (let i = 0; i < W * H; i++) {
+      let b = 0, bv = -1;
+      for (let l = 0; l <= K; l++) { const v = votes[i * (K + 1) + l]; if (v > bv) { bv = v; b = l; } }
+      g[i] = b;
+    }
+    if (o.clean) despeckle(g, W, H);
+    // Palette from the real pixel colors, dark to light, keeping only colors some cell uses.
+    const hex = s => '#' + [s[0], s[1], s[2]].map(v => hex2(v / s[3])).join('');
+    const lum = s => (0.299 * s[0] + 0.587 * s[1] + 0.114 * s[2]) / s[3];
+    const used = [...new Set(g)].filter(v => v).map(v => v - 1).sort((a, b) => lum(sum[a]) - lum(sum[b]));
+    const remap = new Map(used.map((ci, n) => [ci + 1, n + 1]));
+    for (let i = 0; i < W * H; i++) g[i] = g[i] ? remap.get(g[i]) : 0;
+    return { W, H, g, palette: used.length ? used.map(ci => hex(sum[ci])) : [INK] };
   }
 
   function quantize(img, o) {
@@ -147,39 +247,83 @@
     return out;
   }
 
-  function solve(p) {
-    const { W, H } = p, K = p.palette.length, all = (1 << (K + 1)) - 1;
-    const st = new Int32Array(W * H).fill(all);
+  const undecided = st => { let n = 0; for (const v of st) if (v & (v - 1)) n++; return n; };
+
+  // Line logic until nothing changes. st (optional) is a starting state, changed in place.
+  // Also records how hard the logic was: open1 = share of cells still open after the first sweep,
+  // steps = line solves that found something new.
+  function propagate(p, st, budget) {
+    const { W, H } = p;
     const rd = new Uint8Array(H).fill(1), cd = new Uint8Array(W).fill(1);
-    let rounds = 0, any = true;
+    let rounds = 0, any = true, steps = 0, open1 = 0;
     while (any) {
       any = false; rounds++;
       for (let r = 0; r < H; r++) {
         if (!rd[r]) continue; rd[r] = 0;
         const line = st.slice(r * W, r * W + W), res = solveLine(line, p.rowClues[r]);
-        if (!res) return { bad: true, und: W * H };
-        for (let c = 0; c < W; c++) if (res[c] !== line[c]) { st[r * W + c] = res[c]; cd[c] = 1; any = true; }
+        if (budget) budget.n--;
+        if (!res) return { bad: true };
+        let ch = false;
+        for (let c = 0; c < W; c++) if (res[c] !== line[c]) { st[r * W + c] = res[c]; cd[c] = 1; any = ch = true; }
+        if (ch) steps++;
       }
       for (let c = 0; c < W; c++) {
         if (!cd[c]) continue; cd[c] = 0;
         const line = new Int32Array(H); for (let r = 0; r < H; r++) line[r] = st[r * W + c];
         const res = solveLine(line, p.colClues[c]);
-        if (!res) return { bad: true, und: W * H };
-        for (let r = 0; r < H; r++) if (res[r] !== line[r]) { st[r * W + c] = res[r]; rd[r] = 1; any = true; }
+        if (budget) budget.n--;
+        if (!res) return { bad: true };
+        let ch = false;
+        for (let r = 0; r < H; r++) if (res[r] !== line[r]) { st[r * W + c] = res[r]; rd[r] = 1; any = ch = true; }
+        if (ch) steps++;
       }
+      if (rounds === 1) open1 = undecided(st) / (W * H);
       if (rounds > 600) break;
     }
-    let und = 0; for (const v of st) if (v & (v - 1)) und++;
-    return { st, und, rounds: rounds - 1, unique: und === 0 };
+    return { rounds: rounds - 1, steps, open1 };
+  }
+
+  /** Line logic only. unique = solvable without guessing (which also proves there is one solution). */
+  function solve(p) {
+    const st = new Int32Array(p.W * p.H).fill((1 << (p.palette.length + 1)) - 1);
+    const r = propagate(p, st);
+    if (r.bad) return { bad: true, und: p.W * p.H, unique: false, lineSolvable: false, multiple: false, unknown: false };
+    const und = undecided(st);
+    return { st, und, rounds: r.rounds, steps: r.steps, open1: r.open1, unique: und === 0, lineSolvable: und === 0, multiple: false, unknown: false, probes: 0 };
+  }
+
+  /* ---------- Full check: line logic, then a bounded search for puzzles that need guessing ----------
+     Returns solve()'s result plus: unique (exactly one solution, proven), lineSolvable, multiple (two solutions
+     found), unknown (search budget ran out: treated as not unique). Budget = line solves allowed in the search. */
+  function analyze(p, budgetLines) {
+    const s = solve(p);
+    if (s.bad || s.lineSolvable) return s;
+    const K = p.palette.length, budget = { n: budgetLines || 4000 * Math.max(1, Math.round(p.W * p.H / 225)) };
+    let found = 0, probes = 0;
+    (function dfs(st) {
+      if (found > 1 || budget.n <= 0) return;
+      if (propagate(p, st, budget).bad) return;
+      let i = -1, best = 99;
+      for (let t = 0; t < st.length; t++) { const v = st[t]; if (v & (v - 1)) { let b = 0; for (let x = v; x; x &= x - 1) b++; if (b < best) { best = b; i = t; if (b === 2) break; } } }
+      if (i < 0) { found++; return; }
+      for (let v = 0; v <= K && found < 2 && budget.n > 0; v++) if (st[i] & (1 << v)) { probes++; const s2 = st.slice(); s2[i] = 1 << v; dfs(s2); }
+    })(s.st.slice());
+    const unknown = found < 2 && budget.n <= 0;
+    return Object.assign(s, { unique: found === 1 && !unknown, multiple: found > 1, unknown, probes });
   }
 
   /* ---------- Difficulty ---------- */
-  // Logic passes, normalised to a 15x15 grid, nudged by clue density.
+  // How much logic the solver needed (extra sweeps, cells still open after the first sweep, lines revisited)
+  // plus how big the grid is. Calibrated on picture-like grids so a typical 10x10 is Easy, 15x15 spreads over
+  // Easy-Hard and 30x30+ is Medium-Expert. Unique puzzles that need guessing (analyze) are always Expert.
   function score(s, p) {
     if (!s.unique) return 99;
-    const clues = p.rowClues.reduce((a, r) => a + r.length, 0) + p.colClues.reduce((a, c) => a + c.length, 0);
-    const density = clues / (p.W + p.H);
-    return s.rounds / Math.sqrt(p.W * p.H / 225) + Math.max(0, density - 2) * 0.8;
+    const lines = p.W + p.H;
+    const logic = Math.max(0, s.rounds - 1) + 4 * (s.open1 || 0) + 1.5 * Math.max(0, (s.steps || lines) / lines - 1);
+    const size = 2.5 * Math.log2(Math.max(1, Math.sqrt(p.W * p.H) / 10));
+    const v = 0.75 * logic + size;
+    if (s.lineSolvable === false) return Math.min(98, Math.max(14, v + 2 + Math.log2(1 + (s.probes || 0))));
+    return Math.min(98, v);
   }
   const LEVELS = ['Easy', 'Medium', 'Hard', 'Expert'];
   function level(v) { return v >= 99 ? 'Not unique' : v <= 4 ? 'Easy' : v <= 8 ? 'Medium' : v <= 13 ? 'Hard' : 'Expert'; }
@@ -238,6 +382,6 @@
   const encodeGrid = g => Array.from(g, v => v.toString(36)).join('');
   const decodeGrid = s => Uint8Array.from(s, ch => parseInt(ch, 36));
 
-  const E = { INK, clamp, gridFromSource, quantize, despeckle, runs, makePuzzle, solveLine, solve, score, level, LEVELS, fixGrid, fingerprint, encodeGrid, decodeGrid };
+  const E = { INK, clamp, gridSize, gridFromSource, quantize, despeckle, runs, makePuzzle, solveLine, solve, analyze, score, level, LEVELS, fixGrid, fingerprint, encodeGrid, decodeGrid };
   if (typeof module !== 'undefined' && module.exports) module.exports = E; else root.NonoEngine = E;
 })(typeof self !== 'undefined' ? self : this);

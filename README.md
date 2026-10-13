@@ -29,5 +29,8 @@ Defined in [tests/dev-accounts.json](tests/dev-accounts.json). They exist only i
 
 ```bash
 node tests/engine.test.js   # puzzle engine
+node tests/engine.fuzz.js   # engine vs brute force on generated puzzles (run after solver changes)
 node tests/api.test.js      # API smoke test against the local server
 ```
+
+Dashboard browser test: paste [tests/dashboard.e2e.js](tests/dashboard.e2e.js) into the DevTools console on the local site (instructions at the top of the file). Test cases and the latest results are in [tests/TEST-CASES-dashboard.md](tests/TEST-CASES-dashboard.md).

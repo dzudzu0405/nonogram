@@ -15,19 +15,34 @@
   const PROCESS_CONTROLS = ['#w', '#h', '#colors', '#thr', '#ct', '#br', '#inv', '#clean'];
 
   /* ---------- Build + render ---------- */
+  let checkTimer = 0, gen = 0, fixing = false;
   function rebuild() {
+    gen++;
     let base;
     if (state.src) {
-      base = E.gridFromSource(state.src, { W: state.W, Hsel: state.Hsel, thr: state.thr, invert: state.invert, colors: state.colors, clean: state.clean, contrast: state.ct, brightness: state.br });
+      base = E.gridFromSource(state.src, { W: state.W, Hsel: state.Hsel, max: F.max_grid, thr: state.thr, invert: state.invert, colors: state.colors, clean: state.clean, contrast: state.ct, brightness: state.br });
     } else {
       base = { W: state.base.W, H: state.base.H, g: state.base.g.slice(), palette: state.base.palette.slice() };
     }
+    state.fitted = !!base.fitted;
     const key = base.W + 'x' + base.H + '|' + base.palette.join();
     if (key !== state.sizeKey) { state.edits.clear(); state.sizeKey = key; }
     for (const [i, v] of state.edits) base.g[i] = Math.min(v, base.palette.length);
     state.p = E.makePuzzle(base.W, base.H, base.g, base.palette);
     state.s = E.solve(state.p);
+    state.checked = state.s.lineSolvable || !!state.s.bad;
     render();
+    clearTimeout(checkTimer);
+    if (!state.checked) checkTimer = setTimeout(() => { ensureChecked(); render(); }, 250);
+  }
+
+  // When line logic cannot finish, a bounded search decides whether there is still exactly one solution.
+  // It can take a moment on big grids, so it waits until the controls stop moving; saving and exporting
+  // call this first so they never use an unchecked result.
+  function ensureChecked() {
+    if (state.checked) return;
+    clearTimeout(checkTimer);
+    state.s = E.analyze(state.p); state.checked = true;
   }
 
   function render() {
@@ -44,17 +59,25 @@
     cv.classList.toggle('edit', sol);
 
     const lg = $('#legend'); lg.hidden = !sol;
-    lg.innerHTML = p.palette.map((c, i) => `<span><i style="background:${c}"></i>${p.palette.length > 1 ? 'Color ' + (i + 1) : 'Filled'}</span>`).join('') + `<span><i style="background:${R.PAPER.amb}"></i>Undecided by logic</span>`;
+    const ambLabel = s.unique ? 'Needs advanced logic' : 'Undecided by logic';
+    lg.innerHTML = p.palette.map((c, i) => `<span><i style="background:${c}"></i>${p.palette.length > 1 ? 'Color ' + (i + 1) : 'Filled'}</span>`).join('') + (s.lineSolvable ? '' : `<span><i style="background:${R.PAPER.amb}"></i>${ambLabel}</span>`);
     const filled = p.g.reduce((a, b) => a + (b ? 1 : 0), 0);
     const chips = [];
     if (!filled) chips.push('<span class="chip warn">Empty grid: raise the cut-off</span>');
-    else if (s.unique) chips.push('<span class="chip ok">✓ One unique solution</span>');
-    else chips.push(`<span class="chip warn">${s.und} cells undecided: not unique yet</span>`);
-    if (filled && s.unique) chips.push(`<span class="chip">${E.level(E.score(s, p))}</span>`);
+    else if (!state.checked) chips.push('<span class="chip">Checking for one solution…</span>');
+    else if (s.lineSolvable) chips.push('<span class="chip ok">✓ One solution, no guessing</span>');
+    else if (s.unique) chips.push('<span class="chip ok" title="Solvers need to try a cell and follow it through. Fine for Expert books.">✓ One solution · needs advanced logic</span>');
+    else if (s.multiple) chips.push(`<span class="chip warn">More than one solution: ${s.und} cells undecided</span>`);
+    else chips.push(`<span class="chip warn" title="The puzzle is too open to confirm one solution. Auto-fix makes it solvable.">Could not confirm one solution: ${s.und} cells need guessing</span>`);
+    if (filled && state.checked && s.unique) chips.push(`<span class="chip">${E.level(E.score(s, p))}</span>`);
     if (p.palette.length > 1) chips.push(`<span class="chip">${p.palette.length} colors</span>`);
+    if (state.fitted) chips.push(`<span class="chip warn" title="The picture is taller than your plan's limit, so the width was reduced to keep its shape.">Width ${p.W}: fitted to your ${F.max_grid}×${F.max_grid} limit</span>`);
+    const pl = R.printLayout(p, $('#trim').value);
+    if (filled && pl.small) chips.push(`<span class="chip warn" title="Cells under ${R.MIN_CELL_MM} mm are hard to fill in with a pencil. Pick a bigger page or a smaller grid.">Small in print: ${pl.mm.toFixed(1)} mm cells on this page</span>`);
     $('#chips').innerHTML = chips.join('');
     $('#stats').textContent = `${p.W} × ${p.H} · ${filled} filled (${Math.round(filled / (p.W * p.H) * 100)}%) · ${s.rounds || 0} logic passes${state.edits.size ? ` · ${state.edits.size} edits` : ''}`;
-    $('#fix').disabled = !filled || s.unique;
+    $('#fix').disabled = fixing || !filled || s.lineSolvable;
+    $('#fix').textContent = fixing ? 'Fixing…' : s.unique && !s.lineSolvable ? 'Remove the guessing' : 'Auto-fix to one solution';
   }
 
   function markDirty() { state.dirty = true; }
@@ -117,7 +140,7 @@
       await new Promise(r => setTimeout(r, 0));
       try {
         setSource(await loadFile(files[i]), files[i].name.replace(/\.[^.]+$/, ''));
-        if (!state.s.unique) autoFixNow();
+        if (!state.s.lineSolvable) await autoFixNow();
         const r = await save(true, false, true);
         if (r === 'dup') dupes++; else if (r) saved++; else failed++;
       } catch (e) { failed++; }
@@ -157,6 +180,7 @@
   async function save(asNew, force, quiet) {
     const p = state.p;
     if (!p.g.some(v => v)) { App.toast('The grid is empty. Raise the cut-off or pick another picture.', 'err'); return false; }
+    ensureChecked();
     const sc = E.score(state.s, p);
     const body = {
       project_id: projectId, id: asNew ? 0 : state.currentId || 0,
@@ -207,18 +231,39 @@
   $('#plist').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('pitem')) e.target.click(); });
 
   /* ---------- Auto-fix ---------- */
-  function autoFixNow() {
-    const p = state.p;
-    const r = E.fixGrid(p.W, p.H, p.g, p.palette, 30, 36, (i, v) => state.edits.set(i, v));
-    rebuild(); return r;
+  // Runs in a Web Worker so big grids do not freeze the page; falls back to the main thread if workers fail.
+  let worker = null, fixSeq = 0;
+  function runFix(p) {
+    const maxIt = Math.max(30, Math.ceil(p.W * p.H / 40));
+    const local = () => { const flips = []; E.fixGrid(p.W, p.H, p.g, p.palette, maxIt, 36, (i, v) => flips.push([i, v])); return flips; };
+    if (!window.Worker) return Promise.resolve(local());
+    return new Promise(resolve => {
+      try { worker = worker || new Worker(`${NS.base}/assets/js/fix-worker.js?v=${encodeURIComponent(NS.version)}`); } catch (e) { resolve(local()); return; }
+      const id = ++fixSeq;
+      const done = flips => { worker && worker.removeEventListener('message', onMsg); worker && worker.removeEventListener('error', onErr); resolve(flips); };
+      const onMsg = e => { if (e.data.id === id) done(e.data.error ? local() : e.data.flips); };
+      const onErr = e => { e.preventDefault(); worker.terminate(); worker = null; done(local()); };
+      worker.addEventListener('message', onMsg); worker.addEventListener('error', onErr);
+      worker.postMessage({ id, W: p.W, H: p.H, g: Array.from(p.g), palette: p.palette, maxIt });
+    });
   }
-  $('#fix').onclick = () => {
-    const btn = $('#fix'); btn.disabled = true; btn.textContent = 'Fixing…';
-    setTimeout(() => {
-      const r = autoFixNow(); markDirty();
-      btn.textContent = 'Auto-fix to one solution';
-      App.toast(state.s.unique ? `Fixed by changing ${r.flips} cell${r.flips === 1 ? '' : 's'}` : 'Could not fully fix. Try another size or cut-off.', state.s.unique ? '' : 'err');
-    }, 30);
+  /** Returns {flips} or null when the picture changed while the fix was running. */
+  async function autoFixNow() {
+    const p = state.p, myGen = gen;
+    fixing = true; render();
+    const flips = await runFix(p);
+    fixing = false;
+    if (gen !== myGen) { render(); return null; }
+    for (const [i, v] of flips) state.edits.set(i, v);
+    rebuild(); ensureChecked(); render();
+    return { flips: new Set(flips.map(f => f[0])).size };
+  }
+  $('#fix').onclick = async () => {
+    const r = await autoFixNow();
+    if (!r) { App.toast('The picture changed while fixing. Press Auto-fix again.', 'err'); return; }
+    markDirty();
+    const ok = state.s.lineSolvable;
+    App.toast(ok ? `Fixed by changing ${r.flips} cell${r.flips === 1 ? '' : 's'}` : 'Could not fully fix. Try another size or cut-off.', ok ? '' : 'err');
   };
 
   /* ---------- Controls ---------- */
@@ -266,17 +311,29 @@
     try { await App.post('projects.php?action=rename', { id: projectId, name }); lastName = name; document.title = name + ' · Nonogram Studio'; App.toast('Project renamed'); }
     catch (err) { App.fail(err); e.target.value = lastName; }
   });
-  $('#trim').onchange = () => App.post('projects.php?action=settings', { id: projectId, settings: { page: $('#trim').value } }).catch(App.fail);
+  $('#trim').onchange = () => { render(); App.post('projects.php?action=settings', { id: projectId, settings: { page: $('#trim').value } }).catch(App.fail); };
 
   const pdfReady = () => { if (!window.jspdf) { App.toast('The PDF library did not load. Check your connection and reload.', 'err'); return false; } return true; };
-  $('#export-project').onclick = () => {
+  // Embedded font for the PDF; if it cannot load, export still works with the basic font.
+  async function pdfFonts(btn) {
+    btn.disabled = true;
+    try { await R.loadPdfFonts(); } catch (e) { App.toast('Could not load the PDF font: names with accents may not print. Check your connection.', 'err'); }
+    btn.disabled = false;
+  }
+  $('#export-project').onclick = async () => {
     if (!state.puzzles.length) { App.toast('Save at least one puzzle to this project first.', 'err'); return; }
     if (!pdfReady()) return;
+    const page = $('#trim').value;
     const items = state.puzzles.map(pz => ({ name: pz.name, p: puzzleFromSaved(pz), score: pz.score }));
-    R.buildPDF(items, { page: $('#trim').value }).save(App.slug($('#projname').value) + '.pdf');
+    const small = items.filter(it => R.printLayout(it.p, page).small).length;
+    if (small && !confirm(`${small} of ${items.length} puzzles will print with cells smaller than ${R.MIN_CELL_MM} mm on this page size, which is hard to fill in. Export anyway?`)) return;
+    await pdfFonts($('#export-project'));
+    R.buildPDF(items, { page }).save(App.slug($('#projname').value) + '.pdf');
   };
-  $('#pdf1').onclick = () => {
+  $('#pdf1').onclick = async () => {
     if (!pdfReady()) return;
+    ensureChecked(); render();
+    await pdfFonts($('#pdf1'));
     R.buildPDF([{ name: $('#pname').value, p: state.p, score: E.score(state.s, state.p) }], { page: $('#trim').value }).save(App.slug($('#pname').value) + '-nonogram.pdf');
   };
   $('#png').onclick = () => $('#cv').toBlob(b => App.download(b, App.slug($('#pname').value) + (state.tab === 'sol' ? '-solution' : '') + '.png'));

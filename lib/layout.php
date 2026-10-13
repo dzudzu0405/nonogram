@@ -22,6 +22,7 @@ function page_head(string $title, ?array $user = null, string $active = ''): voi
 <?php if ($user): ?>
 <script>window.NS = <?= json_encode([
     'base' => base_path(),
+    'version' => APP_VERSION,
     'csrf' => csrf_token(),
     'user' => ['id' => (int) $user['id'], 'email' => $user['email'], 'name' => $user['name'], 'role' => $user['role']],
     'features' => $f,
