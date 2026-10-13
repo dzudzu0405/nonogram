@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '0.1.0');
+define('APP_VERSION', '0.1.1');
 
 $cfgFile = APP_ROOT . '/config.php';
 if (!is_file($cfgFile)) {
