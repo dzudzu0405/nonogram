@@ -232,6 +232,15 @@
     if (act === 'delete') confirmDelete(p);
   });
   document.addEventListener('click', e => { if (!e.target.closest('.more')) closeMenus(); });
+  // Tabbing out of a menu closes that menu (not others: focus may be moving into a menu that just opened).
+  // Only when focus lands on another element: Safari does not focus buttons on click, so a null
+  // relatedTarget may just be a click on a menu item.
+  box.addEventListener('focusout', e => {
+    const more = e.target.closest('.more');
+    if (!more || !e.relatedTarget || more.contains(e.relatedTarget)) return;
+    const m = more.querySelector('.menu');
+    if (!m.hidden) { m.hidden = true; m.previousElementSibling.setAttribute('aria-expanded', 'false'); }
+  });
 
   function setShow(v) {
     ui.show = v;
@@ -258,7 +267,9 @@
   document.addEventListener('keydown', e => {
     const typing = e.target.closest('input, textarea, select, [contenteditable]');
     if (e.key === 'Escape') {
+      const inMenu = e.target.closest('.menu');
       closeMenus();
+      if (inMenu) inMenu.previousElementSibling.focus(); // back to the ⋯ button
       if (e.target === $('#filter') && $('#filter').value) { $('#filter').value = ''; render(); }
       return;
     }
