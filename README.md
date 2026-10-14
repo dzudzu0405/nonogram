@@ -12,8 +12,10 @@ Picture-to-Nonogram puzzle book builder for KDP and Etsy sellers. PHP 8.1+ and M
 | `app/` | Dashboard: welcome, summary, how it works, latest projects, plan |
 | `app/projects.php` | My Projects: every project with filters, search, sort, grid/list |
 | `app/editor.php?id=` | Puzzle editor (the sidebar folds into an icon rail here) |
-| `app/settings.php` | Name, email, password |
+| `app/exports.php` | My Exports: history of every PDF/PNG download, "Download again" rebuilds a book PDF |
+| `app/settings.php` | Name, email, password, link/unlink Google |
 | `access.php?c=` | WarriorPlus delivery link: unlocks products, creates the account if needed |
+| `google.php` | Sign in with Google (OAuth with cURL, no SDK); links by verified email, creates accounts only from an access link |
 | `register.php`, `forgot.php`, `reset.php` | Sign-up (only from an access link unless `open_registration`), password reset by email |
 | `admin/` | Overview, Users (products, refunds, disable, delete), Access links, Activity log |
 
@@ -23,7 +25,9 @@ Sales work like GameCraft Studio's: one access link per WarriorPlus product, pas
 
 ```bash
 cp config.sample.php config.php   # then: 'db' => ['driver' => 'sqlite', 'path' => __DIR__ . '/storage/dev.sqlite'], a random app_key,
-                                  # 'debug' => true and 'mail' => ['driver' => 'log', 'from_email' => 'noreply@nonogram.test']
+                                  # 'debug' => true, 'mail' => ['driver' => 'log', 'from_email' => 'noreply@nonogram.test'] and, for the
+                                  # Google tests, 'google' => ['client_id' => 'test-client', 'client_secret' => 'test-secret',
+                                  #   'test_endpoints' => ['auth' => 'http://127.0.0.1:8092/auth', 'token' => 'http://127.0.0.1:8092/token', 'userinfo' => 'http://127.0.0.1:8092/userinfo']]
 php tests/seed-users.php          # creates the tables and the test accounts below
 php -S 127.0.0.1:8080 dev-router.php
 ```
@@ -47,6 +51,7 @@ node tests/engine.test.js   # puzzle engine
 node tests/engine.fuzz.js   # engine vs brute force on generated puzzles (run after solver changes)
 node tests/api.test.js      # API smoke test against the local server
 node tests/account.test.js  # access links, sign-up, password reset, settings, admin (needs the log mail driver)
+node tests/google-exports.test.js  # Google sign-in against tests/fake-google.php (started by the test), My Exports
 ```
 
 Dashboard browser test: paste [tests/dashboard.e2e.js](tests/dashboard.e2e.js) into the DevTools console on the local site (instructions at the top of the file). Test cases and the latest results are in [tests/TEST-CASES-dashboard.md](tests/TEST-CASES-dashboard.md).

@@ -35,6 +35,7 @@ page_head($problem ? 'Access link' : 'Unlock your purchase');
       </ul>
       <p class="muted">Create your account, or log in if you already have one. Everything is added the moment you are in.</p>
       <div class="authactions">
+        <?= google_enabled() ? str_replace('<div class="ordivider"><span>or</span></div>', '', google_button()) : '' ?>
         <a class="btn primary" href="<?= e(url('register.php')) ?>">Create my account</a>
         <a class="btn" href="<?= e(url('login.php')) ?>">I already have an account</a>
       </div>

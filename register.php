@@ -43,6 +43,7 @@ page_head('Create your account');
     <h1 class="brand"><span class="mark" aria-hidden="true"></span><?= e(config('app_name')) ?></h1>
     <?php if ($parked): ?><p class="note-box">Your account will get <b><?= e(product_names(access_products($parked))) ?></b>.</p><?php endif; ?>
     <?php if ($error): ?><p class="err-msg" role="alert"><?= e($error) ?></p><?php endif; ?>
+    <?= google_button('Sign up with Google') ?>
     <?= csrf_field() ?>
     <label>Your name<input name="name" required autocomplete="name" value="<?= e($name) ?>" maxlength="120" autofocus></label>
     <label>Email<input name="email" type="email" required autocomplete="email" value="<?= e($email) ?>"></label>

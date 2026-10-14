@@ -124,3 +124,20 @@ CREATE TABLE IF NOT EXISTS product_events (
   KEY idx_pe_link (link_id),
   KEY idx_pe_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v3: Google sign-in and the export history (also created automatically by lib/migrate.php)
+ALTER TABLE users ADD COLUMN google_id VARCHAR(64) NULL;
+CREATE INDEX idx_users_google ON users(google_id);
+CREATE TABLE IF NOT EXISTS exports (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  project_id INT UNSIGNED NULL,
+  kind VARCHAR(20) NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  page_size VARCHAR(10) NULL,
+  puzzle_count INT NOT NULL DEFAULT 0,
+  page_count INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL,
+  KEY idx_exports_user (user_id, created_at),
+  CONSTRAINT fk_exports_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

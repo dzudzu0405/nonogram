@@ -24,6 +24,7 @@ page_head('Log in');
       <p class="muted">Turn any picture into a print-ready Nonogram puzzle book.</p>
     <?php endif; ?>
     <?php if ($error): ?><p class="err-msg" role="alert"><?= e($error) ?></p><?php endif; ?>
+    <?= google_button() ?>
     <?= csrf_field() ?>
     <label>Email<input id="email" name="email" type="email" required autocomplete="email" value="<?= e($email) ?>" autofocus></label>
     <label><span class="labelrow">Password <a href="<?= e(url('forgot.php')) ?>">Forgot password?</a></span><input id="password" name="password" type="password" required autocomplete="current-password"></label>

@@ -16,6 +16,7 @@ function icon(string $name, int $size = 18): string
         'folder' => '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
         'plus' => '<path d="M12 5v14M5 12h14"/>',
         'upload' => '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
+        'download' => '<path d="M12 4v12M7 11l5 5 5-5M5 20h14"/>',
         'settings' => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
         'grid' => '<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
         'users' => '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
@@ -40,7 +41,7 @@ function icon(string $name, int $size = 18): string
 function nav_groups(array $user): array
 {
     $g = [
-        ['', [['app/', 'home', 'Dashboard', true], ['app/projects.php', 'folder', 'My Projects', false]]],
+        ['', [['app/', 'home', 'Dashboard', true], ['app/projects.php', 'folder', 'My Projects', false], ['app/exports.php', 'download', 'My Exports', false]]],
         ['Account', [['app/settings.php', 'settings', 'Settings', false]]],
     ];
     if (is_admin($user)) {

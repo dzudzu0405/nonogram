@@ -56,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 q('DELETE FROM projects WHERE user_id = ?', [$id]);
                 q('DELETE FROM entitlements WHERE user_id = ?', [$id]);
                 q('DELETE FROM tokens WHERE user_id = ?', [$id]);
+                q('DELETE FROM exports WHERE user_id = ?', [$id]);
                 q('DELETE FROM users WHERE id = ?', [$id]);
                 db()->commit();
                 flash('success', $u['email'] . ' and all of its projects have been deleted. The product log keeps its history.');
@@ -84,6 +85,8 @@ admin_begin($u['name'] ?: $u['email'], 'Users');
           <dt>Last login</dt><dd><?= e(time_ago($u['last_login_at'])) ?></dd>
           <dt>Projects</dt><dd><?= $projects ?></dd>
           <dt>Puzzles</dt><dd><?= $puzzles ?></dd>
+          <dt>Exports</dt><dd><?= (int) qv('SELECT COUNT(*) FROM exports WHERE user_id = ?', [$id]) ?></dd>
+          <dt>Log in with</dt><dd><?= e(implode(' + ', array_filter([$u['password_hash'] ? 'password' : null, $u['google_id'] ? 'Google' : null])) ?: '—') ?></dd>
         </dl>
       </section>
 

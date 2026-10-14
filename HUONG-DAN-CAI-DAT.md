@@ -37,7 +37,13 @@
    - Nhập email và mật khẩu cho tài khoản **Admin**, rồi bấm **Install**. Trình cài đặt tự tạo các bảng trong database.
    - Cài xong, **xóa `install.php`** trong File Manager.
 
-6. **Đăng nhập**: `https://tenmien.com/login.php`. Trang **Administration → Overview** sẽ báo nếu còn thiếu cấu hình (app_url, email, access link).
+6. **(Tùy chọn) Đăng nhập bằng Google**
+   - Vào [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials) → **Create credentials** → **OAuth client ID** → loại **Web application**.
+   - Ở **Authorised redirect URIs** thêm đúng địa chỉ: `https://tenmien.com/google.php` (theo `app_url` của bạn; Google chỉ nhận `https://`).
+   - Copy **Client ID** và **Client secret** vào khối `google` trong `config.php`. Để trống thì nút Google bị ẩn.
+   - Cần bật extension **curl** trong cPanel → Select PHP Version → Extensions.
+
+7. **Đăng nhập**: `https://tenmien.com/login.php`. Trang **Administration → Overview** sẽ báo nếu còn thiếu cấu hình (app_url, email, access link).
 
 ## Bán trên WarriorPlus: access link
 WarriorPlus nhận tiền; app chỉ cần biết ai được dùng gì. Hai bên nối với nhau bằng **access link**: mỗi sản phẩm WarriorPlus một link.
@@ -58,6 +64,14 @@ Mở lại link cũ không làm mất hay thay đổi gì. Tài khoản chỉ t�
 **Nếu link bị lộ ra ngoài:** vào Access links → **New address**. Link cũ ngừng hoạt động ngay, khách đã mua trước đó vẫn giữ sản phẩm. Nhớ dán link mới vào WarriorPlus. Có thể đặt **giới hạn số lần dùng** và **ngày hết hạn** cho từng link. Mỗi lần dùng link đều được ghi lại kèm địa chỉ IP (Administration → Activity).
 
 **Hoàn tiền:** WarriorPlus không báo hoàn tiền về app, nên làm tay: **Administration → Users** → tìm khách → bỏ tick sản phẩm, ghi lý do (ví dụ "Refund W+ #12345") → **Save products**. Project của khách không bị xóa.
+
+## Đăng nhập bằng Google hoạt động thế nào
+- Khách đã có tài khoản cùng email (Google đã xác minh email): bấm nút Google là vào thẳng tài khoản đó, và từ đó đăng nhập được cả hai cách.
+- Khách mới: chỉ tạo được tài khoản khi đến từ access link, giống đăng ký bằng email. Tài khoản tạo bằng Google chưa có mật khẩu; khách có thể đặt mật khẩu trong **Settings** (hoặc dùng "Forgot password").
+- Trong **Settings** khách có thể liên kết hoặc gỡ liên kết Google (gỡ chỉ được khi đã có mật khẩu).
+
+## My Exports
+Mỗi lần khách tải PDF hoặc PNG trong editor, app ghi lại vào **My Exports** (tên, project, khổ giấy, số puzzle, số trang). File được tạo ngay trên trình duyệt nên không chiếm dung lượng hosting; nút **Download again** dựng lại PDF của project theo nội dung hiện tại.
 
 ## Quản trị
 - **Users:** tìm theo tên/email, lọc theo sản phẩm, vai trò, trạng thái. Trong từng tài khoản: đổi sản phẩm, gửi link đặt lại mật khẩu, khóa/mở tài khoản, cấp quyền admin, xóa tài khoản (phải gõ đúng email).
@@ -80,4 +94,4 @@ Bảng mới trong database (nếu có) được tạo tự động ở lần m�
 php -S 127.0.0.1:8080 dev-router.php
 ```
 Với `config.php` dùng SQLite: `'db' => ['driver' => 'sqlite', 'path' => __DIR__ . '/storage/dev.sqlite']`, `'debug' => true`, và `'mail' => ['driver' => 'log', 'from_email' => 'noreply@nonogram.test']` (email được ghi vào `storage/logs/mail.log` thay vì gửi đi).
-Test: `node tests/engine.test.js`, `node tests/engine.fuzz.js`, `node tests/api.test.js`, `node tests/account.test.js`.
+Test: `node tests/engine.test.js`, `node tests/engine.fuzz.js`, `node tests/api.test.js`, `node tests/account.test.js`, `node tests/google-exports.test.js` (cần khối `google` với `test_endpoints` như trong README).

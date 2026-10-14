@@ -11,11 +11,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_post_csrf($back);
     $row = q1('SELECT * FROM users WHERE id = ?', [$uid]);
     $action = $_POST['action'] ?? '';
+    $hasPassword = !empty($row['password_hash']);
     if ($action === 'profile') {
         $name = str_limit((string) ($_POST['name'] ?? ''), 120);
         $email = normalize_email((string) ($_POST['email'] ?? ''));
         if ($name === '') flash('error', 'Enter your name.');
         elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) flash('error', 'Enter a valid email address.');
+        elseif ($email !== $row['email'] && !$hasPassword) flash('error', 'Set a password first (below), then you can change your email.');
         elseif ($email !== $row['email'] && !password_verify((string) ($_POST['current_password'] ?? ''), (string) $row['password_hash'])) flash('error', 'To change your email, enter your current password.');
         elseif ($email !== $row['email'] && qv('SELECT id FROM users WHERE email = ? AND id <> ?', [$email, $uid])) flash('error', 'That email already belongs to another account.');
         else {
@@ -24,23 +26,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'password') {
         $new = (string) ($_POST['password'] ?? '');
-        if (!password_verify((string) ($_POST['current_password'] ?? ''), (string) $row['password_hash'])) flash('error', 'Your current password is not right.');
+        // Accounts made with Google have no password yet: they may set one without a current password.
+        if ($hasPassword && !password_verify((string) ($_POST['current_password'] ?? ''), (string) $row['password_hash'])) flash('error', 'Your current password is not right.');
         elseif ($p = password_problem($new, (string) ($_POST['password_confirm'] ?? ''))) flash('error', $p);
         else {
             q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $uid]);
             q("UPDATE tokens SET used_at = ? WHERE user_id = ? AND purpose = 'reset' AND used_at IS NULL", [now(), $uid]);
             session_regenerate_id(true);
-            flash('success', 'Your password has been changed.');
+            flash('success', $hasPassword ? 'Your password has been changed.' : 'Password set. You can now log in with your email and password too.');
         }
+    } elseif ($action === 'unlink_google') {
+        if (!$hasPassword) flash('error', 'Set a password first, or you would have no way to log in.');
+        else { q('UPDATE users SET google_id = NULL WHERE id = ?', [$uid]); flash('success', 'Google is no longer linked. Log in with your email and password.'); }
     }
     redirect($back);
 }
 
 $f = features($user);
 $row = q1('SELECT * FROM users WHERE id = ?', [$uid]);
+$hasPassword = !empty($row['password_hash']);
 $nums = [
     'Projects' => (int) qv('SELECT COUNT(*) FROM projects WHERE user_id = ?', [$uid]),
     'Puzzles' => (int) qv('SELECT COUNT(*) FROM puzzles WHERE user_id = ?', [$uid]),
+    'Exports' => (int) qv('SELECT COUNT(*) FROM exports WHERE user_id = ?', [$uid]),
     'Member since' => gmdate('j M Y', strtotime($row['created_at'] . ' UTC')),
 ];
 page_head('Settings', $user, 'settings');
@@ -63,17 +71,31 @@ page_head('Settings', $user, 'settings');
         </form>
       </section>
       <section class="card">
-        <div class="cardhead"><h2>Change password</h2></div>
+        <div class="cardhead"><h2><?= $hasPassword ? 'Change password' : 'Set a password' ?></h2></div>
+        <?php if (!$hasPassword): ?><p class="muted small">You log in with Google. Set a password to log in with your email too.</p><?php endif; ?>
         <form method="post" class="form">
           <?= csrf_field() ?><input type="hidden" name="action" value="password">
-          <label>Current password<input name="current_password" type="password" required autocomplete="current-password"></label>
+          <?php if ($hasPassword): ?><label>Current password<input name="current_password" type="password" required autocomplete="current-password"></label><?php endif; ?>
           <div class="row2">
             <label>New password (<?= PASSWORD_MIN ?>+ characters)<input name="password" type="password" required minlength="<?= PASSWORD_MIN ?>" autocomplete="new-password"></label>
             <label>Confirm new password<input name="password_confirm" type="password" required autocomplete="new-password"></label>
           </div>
-          <div><button class="btn primary">Change password</button></div>
+          <div><button class="btn primary"><?= $hasPassword ? 'Change password' : 'Set password' ?></button></div>
         </form>
       </section>
+      <?php if (google_enabled() || $row['google_id']): ?>
+      <section class="card">
+        <div class="cardhead"><h2>Google</h2><?= $row['google_id'] ? '<span class="chip ok">Linked</span>' : '<span class="chip">Not linked</span>' ?></div>
+        <?php if ($row['google_id']): ?>
+          <p class="muted small">You can log in with the "Continue with Google" button.</p>
+          <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="unlink_google">
+            <button class="btn" <?= $hasPassword ? '' : 'disabled title="Set a password first"' ?>>Unlink Google</button></form>
+        <?php else: ?>
+          <p class="muted small">Link a Google account to log in with one click. Its email does not have to match.</p>
+          <a class="btn google" href="<?= e(url('google.php')) ?>">Link Google account</a>
+        <?php endif; ?>
+      </section>
+      <?php endif; ?>
     </div>
     <aside class="stack">
       <section class="card">

@@ -43,6 +43,16 @@ return [
         'reply_to'   => '',            // optional: where replies go, e.g. support@yourdomain.com
     ],
 
+    // Sign in with Google (optional). Leave both empty to hide the Google button.
+    //   1. console.cloud.google.com/apis/credentials > Create credentials > OAuth client ID > Web application
+    //   2. Authorised redirect URI: your app_url + /google.php, e.g. https://studio.yourdomain.com/google.php
+    //      (Google only accepts https://)
+    //   3. Copy the client ID and secret here. The cURL PHP extension must be on.
+    'google' => [
+        'client_id'     => '',
+        'client_secret' => '',
+    ],
+
     // Sales pages for the upgrade buttons in the app (sidebar plan card and dashboard). Leave a product empty
     // to hide its button. Keys: pro, vault, dfy10, agency.
     'upgrade_urls' => [

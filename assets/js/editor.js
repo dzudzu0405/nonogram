@@ -328,15 +328,26 @@
     const small = items.filter(it => R.printLayout(it.p, page).small).length;
     if (small && !confirm(`${small} of ${items.length} puzzles will print with cells smaller than ${R.MIN_CELL_MM} mm on this page size, which is hard to fill in. Export anyway?`)) return;
     await pdfFonts($('#export-project'));
-    R.buildPDF(items, { page }).save(App.slug($('#projname').value) + '.pdf');
+    const doc = R.buildPDF(items, { page });
+    doc.save(App.slug($('#projname').value) + '.pdf');
+    logExport('project_pdf', $('#projname').value, items.length, doc.getNumberOfPages(), page);
   };
   $('#pdf1').onclick = async () => {
     if (!pdfReady()) return;
     ensureChecked(); render();
     await pdfFonts($('#pdf1'));
-    R.buildPDF([{ name: $('#pname').value, p: state.p, score: E.score(state.s, state.p) }], { page: $('#trim').value }).save(App.slug($('#pname').value) + '-nonogram.pdf');
+    const doc = R.buildPDF([{ name: $('#pname').value, p: state.p, score: E.score(state.s, state.p) }], { page: $('#trim').value });
+    doc.save(App.slug($('#pname').value) + '-nonogram.pdf');
+    logExport('puzzle_pdf', $('#pname').value, 1, doc.getNumberOfPages(), $('#trim').value);
   };
-  $('#png').onclick = () => $('#cv').toBlob(b => App.download(b, App.slug($('#pname').value) + (state.tab === 'sol' ? '-solution' : '') + '.png'));
+  $('#png').onclick = () => $('#cv').toBlob(b => {
+    App.download(b, App.slug($('#pname').value) + (state.tab === 'sol' ? '-solution' : '') + '.png');
+    logExport('png', $('#pname').value + (state.tab === 'sol' ? ' (solution)' : ''), 1, 0, '');
+  });
+  // My Exports keeps a history of downloads. A failure here must never get in the way of the download itself.
+  function logExport(kind, name, puzzles, pages, page) {
+    App.post('exports.php?action=log', { kind, project_id: projectId, name, puzzles, pages, page }).catch(() => {});
+  }
 
   window.addEventListener('beforeunload', e => { if (state.dirty && state.currentId) { e.preventDefault(); e.returnValue = ''; } });
   let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 120); });
@@ -349,6 +360,13 @@
     state.puzzles = r.project.puzzles;
     if (r.project.settings && r.project.settings.page) $('#trim').value = r.project.settings.page;
     renderList();
+    // "Download again" on My Exports: same page size as that export, then build the book PDF.
+    if (location.hash === '#export') {
+      const pg = new URLSearchParams(location.search).get('page');
+      if (pg && [...$('#trim').options].some(o => o.value === pg)) { $('#trim').value = pg; render(); }
+      history.replaceState(null, '', location.pathname + location.search);
+      $('#export-project').click();
+    }
   }).catch(App.fail);
   document.fonts && document.fonts.ready.then(render);
 })();

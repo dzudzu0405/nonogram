@@ -447,3 +447,12 @@ code.url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:n
 .pager{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .notice{margin:0;padding:10px 14px;border-radius:9px;font-size:13.5px;font-weight:500;background:var(--warn-soft);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 25%,transparent)}
 .form label.check{flex-direction:row;align-items:flex-start;font-weight:500}.form label.check input{margin-top:2px}.prodpick label.check{align-items:center}
+/* Google sign-in, My Exports */
+.btn.google{background:#fff;color:#1f1f1f;border-color:#dadce0;gap:10px}
+.btn.google:hover{border-color:#5f6368;background:#f8f9fa}
+.ordivider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}
+.ordivider::before,.ordivider::after{content:"";flex:1;height:1px;background:var(--line)}
+.howicon.sm{width:32px;height:32px;border-radius:8px}
+.table .right{text-align:right;white-space:nowrap}
+.table.exports .btn .ic{width:14px;height:14px}
+.clearform{display:flex;justify-content:flex-end;margin:0}

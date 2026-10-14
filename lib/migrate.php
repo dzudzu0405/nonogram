@@ -3,7 +3,7 @@
 // appear by themselves: bootstrap calls migrate() and it runs once per schema version (cheap file check after).
 // Every step is idempotent (CREATE TABLE IF NOT EXISTS), so running it twice is harmless.
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function schema_version_file(): string
 {
@@ -22,6 +22,7 @@ function migrate(bool $force = false): void
         return; // not installed yet: install.php creates everything
     }
     foreach (schema_v2() as $sql) db()->exec($sql);
+    schema_v3();
     @file_put_contents($file, SCHEMA_VERSION . "\n");
 }
 
@@ -94,4 +95,51 @@ function schema_v2(): array
           KEY idx_pe_created (created_at)
         )' . $tail,
     ];
+}
+
+function has_column(string $table, string $col): bool
+{
+    if (db_driver() === 'sqlite') {
+        foreach (q("PRAGMA table_info($table)")->fetchAll() as $c) if ($c['name'] === $col) return true;
+        return false;
+    }
+    return (bool) q("SHOW COLUMNS FROM $table LIKE " . db()->quote($col))->fetch();
+}
+
+/** v3: Google sign-in (users.google_id) and the export history (My Exports). */
+function schema_v3(): void
+{
+    if (!has_column('users', 'google_id')) {
+        db()->exec('ALTER TABLE users ADD COLUMN google_id VARCHAR(64) NULL');
+        db()->exec('CREATE INDEX idx_users_google ON users(google_id)');
+    }
+    if (db_driver() === 'sqlite') {
+        db()->exec('CREATE TABLE IF NOT EXISTS exports (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          project_id INTEGER NULL,
+          kind TEXT NOT NULL,
+          name TEXT NOT NULL,
+          page_size TEXT NULL,
+          puzzle_count INTEGER NOT NULL DEFAULT 0,
+          page_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )');
+        db()->exec('CREATE INDEX IF NOT EXISTS idx_exports_user ON exports(user_id, created_at)');
+        return;
+    }
+    // project_id has no foreign key: the history keeps rows for deleted projects ("deleted project").
+    db()->exec('CREATE TABLE IF NOT EXISTS exports (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id INT UNSIGNED NOT NULL,
+      project_id INT UNSIGNED NULL,
+      kind VARCHAR(20) NOT NULL,
+      name VARCHAR(160) NOT NULL,
+      page_size VARCHAR(10) NULL,
+      puzzle_count INT NOT NULL DEFAULT 0,
+      page_count INT NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL,
+      KEY idx_exports_user (user_id, created_at),
+      CONSTRAINT fk_exports_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
 }
