@@ -92,3 +92,35 @@ CREATE TABLE IF NOT EXISTS puzzles (
   KEY idx_pz_hash (project_id, hash),
   CONSTRAINT fk_pz_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v2: WarriorPlus access links and the product log (also created automatically by lib/migrate.php)
+CREATE TABLE IF NOT EXISTS access_links (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(64) NOT NULL UNIQUE,
+  label VARCHAR(120) NOT NULL,
+  products VARCHAR(255) NOT NULL,
+  note VARCHAR(255) NULL,
+  max_uses INT NOT NULL DEFAULT 0,
+  uses INT NOT NULL DEFAULT 0,
+  expires_at DATETIME NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS product_events (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  product VARCHAR(30) NOT NULL,
+  action VARCHAR(10) NOT NULL,
+  source VARCHAR(20) NOT NULL,
+  link_id INT UNSIGNED NULL,
+  actor_id INT UNSIGNED NULL,
+  note VARCHAR(255) NULL,
+  ip VARCHAR(45) NULL,
+  created_at DATETIME NOT NULL,
+  KEY idx_pe_user (user_id, created_at),
+  KEY idx_pe_link (link_id),
+  KEY idx_pe_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -9,12 +9,12 @@ if (!$f['app']) redirect('app/');
 $project = q1('SELECT id, name FROM projects WHERE id = ? AND user_id = ?', [(int) ($_GET['id'] ?? 0), (int) $user['id']]);
 if (!$project) redirect('app/');
 
-page_head($project['name'], $user);
+page_head($project['name'], $user, 'projects', ['compact' => true, 'tagline' => 'Editing: ' . $project['name']]);
 $sizes = [5, 7, 10, 12, 15, 20, 25, 30, 35, 40, 45, 50];
 ?>
 <main class="editor" data-project="<?= (int) $project['id'] ?>">
   <div class="edbar">
-    <a class="back" href="<?= e(url('app/')) ?>">← Projects</a>
+    <a class="back" href="<?= e(url('app/projects.php')) ?>">← My Projects</a>
     <input class="projname" id="projname" value="<?= e($project['name']) ?>" maxlength="160" aria-label="Project name">
     <span class="muted small" id="projmeta"></span>
     <div class="edbar-actions">

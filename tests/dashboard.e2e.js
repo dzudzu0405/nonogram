@@ -1,4 +1,4 @@
-/* Browser end-to-end test for the projects dashboard (app/index.php + assets/js/dashboard.js).
+/* Browser end-to-end test for the Dashboard (app/index.php), My Projects (app/projects.php) and the app shell.
  *
  * How to run (local dev server only, never on the live site):
  *   1. php tests/seed-users.php, then php -S 127.0.0.1:8080 dev-router.php
@@ -49,15 +49,22 @@ async function runAll(accounts) {
     W.addEventListener('error', e => jsErrors.push(e.message));
     W.addEventListener('unhandledrejection', e => jsErrors.push('unhandled: ' + (e.reason && (e.reason.error || e.reason.message) || e.reason)));
   }
-  async function open(path = '/app/', width = 1100) {
+  // Most tests drive My Projects; the summary, greeting and recent cards are on the Dashboard (/app/).
+  async function open(path = '/app/projects.php', width = 1100) {
     fr.style.width = width + 'px';
     const l = nextLoad(); fr.src = base + path + (path.includes('?') ? '&' : '?') + 't=' + Date.now(); await l; attach();
     if (D.querySelector('#projects')) await until(() => !D.querySelector('#projects .skeleton'), 'projects to load');
   }
   async function navAfter(action) { const l = nextLoad(); action(); await Promise.race([l, sleep(5000).then(() => { throw new Error('no navigation'); })]); attach(); return W.location; }
 
+  // Logout is POST-only with the CSRF token (a GET does nothing).
+  async function logout() {
+    const html = await (await fetch(base + '/app/settings.php')).text();
+    const m = html.match(/name="csrf" value="([^"]+)"/);
+    if (m) await fetch(base + '/logout.php', { method: 'POST', body: new URLSearchParams({ csrf: m[1] }), redirect: 'manual' });
+  }
   async function login(email) {
-    await fetch(base + '/logout.php');
+    await logout();
     const html = await (await fetch(base + '/login.php')).text();
     const csrf = html.match(/name="csrf" value="([^"]+)"/)[1];
     await fetch(base + '/login.php', { method: 'POST', body: new URLSearchParams({ csrf, email, password: pw[email] }), redirect: 'manual' });
@@ -87,7 +94,7 @@ async function runAll(accounts) {
   async function fresh(name, puzzles = []) { await makeProject(name, puzzles); await open(); }
   async function cleanup() { for (const p of await list()) if (p.name.startsWith('E2E ') || p.name.startsWith('<img') || p.name.startsWith('Uploaded pictures')) await api('projects.php?action=delete', { id: p.id }); }
 
-  const cards = () => [...D.querySelectorAll('#projects .pcard')];
+  const cards = () => [...D.querySelectorAll('#projects .pcard:not(.newcard)')];
   const names = () => cards().map(c => c.querySelector('h3').textContent);
   const card = n => cards().find(c => c.querySelector('h3').textContent === n);
   const $ = s => D.querySelector(s);
@@ -117,16 +124,36 @@ async function runAll(accounts) {
   });
   await T('TC-02', 'Summary numbers are correct', async () => {
     const p = await list();
-    eq(+$('#stat-projects').textContent, p.length, 'projects');
-    eq(+$('#stat-puzzles').textContent, p.reduce((a, x) => a + x.count, 0), 'puzzles');
-    eq(+$('#stat-warn').textContent, p.reduce((a, x) => a + x.not_unique, 0), 'need checking');
     eq(+$('#n-all').textContent, p.length, 'All tab count');
     eq(+$('#n-warn').textContent, p.filter(x => x.count && x.not_unique).length, 'Need checking tab count');
     eq(+$('#n-empty').textContent, p.filter(x => !x.count).length, 'Empty tab count');
+    await open('/app/');
+    eq(+$('#stat-projects').textContent, p.length, 'projects');
+    eq(+$('#stat-puzzles').textContent, p.reduce((a, x) => a + x.count, 0), 'puzzles');
+    eq(+$('#stat-warn').textContent, p.reduce((a, x) => a + x.not_unique, 0), 'need checking');
     ok(parseFloat($('#stat-meter').style.width) > 0, 'quota meter is empty');
   });
   await T('TC-03', 'Greeting shows time of day and name', async () => {
     ok(/^(Good morning|Good afternoon|Good evening|Working late), /.test($('#greet').textContent), 'greeting text: ' + $('#greet').textContent);
+  });
+  await T('TC-46', 'Dashboard shows the 4 latest projects, newest first, then a "New project" card', async () => {
+    const p = (await list()).sort((a, b) => (b.updated_at > a.updated_at) - (b.updated_at < a.updated_at) || b.id - a.id);
+    eq(names(), p.slice(0, 4).map(x => x.name), 'recent cards');
+    ok($('#projects').lastElementChild.classList.contains('newcard'), 'new card last');
+    eq($('.seeall').hidden, p.length <= 4, '"View all" only when there are more');
+    $('#card-new').click(); ok($('#dlg-name').open, 'new card opens the dialog'); $('#dlg-name [data-close]').click();
+    eq(D.querySelectorAll('.howsteps li').length, 4, 'how it works');
+    ok(!$('.toolbar') && !$('#filter'), 'no list tools on the dashboard');
+  });
+  await T('TC-47', 'Shell: navigation, user menu with a POST log-out form, admin links for admins', async () => {
+    eq($('.navitem[aria-current="page"]').textContent.trim(), 'Dashboard', 'active nav item');
+    ok([...D.querySelectorAll('.navitem')].some(a => a.textContent.includes('Access links')), 'admin nav');
+    $('[data-menu-trigger]').click(); ok(!$('.usermenu .menu').hidden, 'menu opens');
+    const form = $('.usermenu form');
+    ok(form && form.method === 'post' && form.action.endsWith('/logout.php') && form.querySelector('[name=csrf]'), 'log-out form');
+    key('Escape'); ok($('.usermenu .menu').hidden, 'Escape closes');
+    await open();
+    eq($('.navitem[aria-current="page"]').textContent.trim(), 'My Projects', 'active on My Projects');
   });
   await T('TC-04', 'Card shows count, sizes, levels, status and edit time', async () => {
     const c = card('E2E Alpha');
@@ -136,7 +163,7 @@ async function runAll(accounts) {
     ok(card('E2E beta').querySelector('.chip.warn').textContent.includes('1 to check'), 'beta chip');
     ok(card('E2E beta').classList.contains('warn'), 'beta warn border');
     ok(card('E2E Gamma').querySelector('.thumb .empty'), 'Gamma placeholder');
-    eq(c.querySelector('.edited').textContent, 'just now', 'relative time');
+    eq(c.querySelector('.edited').textContent, 'Edited just now', 'relative time');
   });
 
   /* ---------- B. filters ---------- */
@@ -152,11 +179,15 @@ async function runAll(accounts) {
     $('[data-show=all]').click();
     eq(cards().length, +$('#n-all').textContent, 'All restores every card');
   });
-  await T('TC-07', 'Clicking "Need checking" summary card applies the filter', async () => {
+  await T('TC-07', 'Dashboard "Need checking" card opens My Projects filtered', async () => {
+    await open('/app/');
     ok(!$('#stat-check').disabled, 'card should be clickable');
-    $('#stat-check').click();
+    const loc = await navAfter(() => $('#stat-check').click());
+    ok(loc.pathname.endsWith('/app/projects.php') && loc.search.includes('show=warn'), 'went to ' + loc.href);
+    await until(() => !$('#projects .skeleton'), 'list');
     eq($('[data-show=warn]').getAttribute('aria-selected'), 'true', 'warn tab');
-    $('[data-show=all]').click();
+    ok(cards().every(c => c.classList.contains('warn')), 'only projects to check');
+    await open();
   });
 
   /* ---------- C. search ---------- */
@@ -220,7 +251,7 @@ async function runAll(accounts) {
     menuOf('E2E Alpha').click(); eq(openMenus(), 1, 'first menu');
     eq(menuOf('E2E Alpha').getAttribute('aria-expanded'), 'true', 'aria-expanded');
     menuOf('E2E beta').click(); eq(openMenus(), 1, 'second menu should replace first');
-    $('.hero h1').click(); eq(openMenus(), 0, 'outside click');
+    $('.pagehead h1').click(); eq(openMenus(), 0, 'outside click');
     menuOf('E2E beta').click(); key('Escape'); eq(openMenus(), 0, 'Escape');
   });
   await T('TC-19', 'Opening the menu does not open the project', async () => {
@@ -364,7 +395,7 @@ async function runAll(accounts) {
   });
   await T('TC-36', 'Expired session sends the user to the login page', async () => {
     await fresh('E2E Session');
-    await fetch(base + '/logout.php');
+    await logout();
     try {
       const loc = await navAfter(() => act('E2E Session', 'duplicate'));
       ok(loc.pathname.endsWith('/login.php'), 'went to ' + loc.href);
@@ -373,12 +404,15 @@ async function runAll(accounts) {
 
   /* ---------- J. small screens ---------- */
   await T('TC-37', 'Phone width (375px): no sideways scroll in grid and list layout', async () => {
-    await open('/app/', 375);
+    await open('/app/projects.php', 375);
     ok(D.documentElement.scrollWidth <= 375, 'grid scrollWidth ' + D.documentElement.scrollWidth);
     D.querySelector('[data-view=list]').click();
     ok(D.documentElement.scrollWidth <= 375, 'list scrollWidth ' + D.documentElement.scrollWidth);
     D.querySelector('[data-view=grid]').click();
-    const r = $('#filter').getBoundingClientRect(); ok(r.width >= 250, 'search box too narrow: ' + r.width);
+    const r = $('#filter').getBoundingClientRect(); ok(r.width >= 220, 'search box too narrow: ' + r.width);
+    await open('/app/', 375);
+    ok(D.documentElement.scrollWidth <= 375, 'dashboard scrollWidth ' + D.documentElement.scrollWidth);
+    ok($('.sidebar').getBoundingClientRect().width <= 70, 'sidebar becomes an icon rail');
     await open();
   });
 
@@ -387,8 +421,11 @@ async function runAll(accounts) {
   /* ---------- K. other accounts ---------- */
   await login(FE); await open();
   await T('TC-38', 'FE plan: limits shown for the plan', async () => {
+    await open('/app/');
     ok($('.summary').textContent.includes('/ 100'), 'project limit');
     ok($('.summary').textContent.includes('30×30') && $('.summary').textContent.includes('Pro adds'), 'plan card');
+    ok(![...D.querySelectorAll('.navitem')].some(a => a.textContent.includes('Access links')), 'no admin nav for customers');
+    await open();
   });
   await T('TC-39', 'FE user does not see admin projects', async () => {
     ok(!names().some(n => n.startsWith('E2E ')), 'admin projects leaked');
@@ -396,8 +433,11 @@ async function runAll(accounts) {
   await T('TC-40', 'Empty account: 3-step guide, toolbar hidden, buttons work', async () => {
     if ((await list()).length) throw new Skip('fe@nonogram.test already has projects');
     ok($('.emptystate .steps') && $('.toolbar').hidden, 'empty state/toolbar');
-    ok($('#stat-check').disabled, '"Need checking" should be disabled at 0');
     $('#empty-new').click(); ok($('#dlg-name').open, 'empty-state New project'); $('#dlg-name [data-close]').click();
+    await open('/app/');
+    ok($('#stat-check').disabled, '"Need checking" should be disabled at 0');
+    ok($('.emptystate'), 'dashboard empty state');
+    await open();
   });
   await T('TC-41', 'Project limit reached: create shows an error and stays on the page', async () => {
     const have = (await list()).length;
@@ -406,18 +446,21 @@ async function runAll(accounts) {
     $('#qa-new').click(); $('#dlg-name-input').value = 'E2E over limit'; $('#dlg-name-ok').click();
     await until(() => $('.toast.err'), 'error toast');
     ok($('.toast.err').textContent.includes('100 projects'), 'toast: ' + $('.toast.err').textContent);
-    ok(W.location.pathname.endsWith('/app/'), 'navigated away');
+    ok(W.location.pathname.endsWith('/app/projects.php'), 'navigated away');
+    await open('/app/');
     eq(+$('#stat-projects').textContent, 100, 'counter'); eq($('#stat-meter').style.width, '100%', 'meter full');
     await cleanup();
   });
 
-  await login(NONE); await open();
-  await T('TC-42', 'Account without a license sees the license message only', async () => {
-    ok($('.err-msg') && $('.err-msg').textContent.includes('no active Nonogram Studio license'), 'message');
+  await login(NONE); await open('/app/');
+  await T('TC-42', 'Account without a license sees how to unlock it; My Projects sends them back', async () => {
+    ok($('.nolicense') && $('.nolicense').textContent.includes('no Nonogram Studio license') && $('.nolicense').textContent.includes('access link'), 'message');
     ok(!$('#projects') && !$('#qa-new'), 'dashboard shown');
+    await open('/app/projects.php');
+    ok(W.location.pathname.endsWith('/app/'), 'My Projects redirects: ' + W.location.pathname);
   });
 
-  await fetch(base + '/logout.php'); await open('/app/');
+  await logout(); await open('/app/');
   await T('TC-43', 'Logged-out visitor is sent to login', async () => { ok(W.location.pathname.endsWith('/login.php'), W.location.href); });
 
   await T('TC-44', 'No JavaScript errors during the run', async () => { eq(jsErrors, [], 'errors'); });

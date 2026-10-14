@@ -35,12 +35,23 @@ function is_https(): bool
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 }
 
+const SESSION_LIFETIME = 60 * 60 * 24 * 30;
+
 function start_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) return;
+    // The cookie lasts 30 days, so the session file must too. PHP's default is 24 minutes and shared hosts clean
+    // the default folder for every site on the server, so keep our own folder and our own garbage collection.
+    $dir = APP_ROOT . '/storage/sessions';
+    if ((is_dir($dir) || @mkdir($dir, 0700, true)) && is_writable($dir)) {
+        session_save_path($dir);
+        ini_set('session.gc_probability', '1');
+        ini_set('session.gc_divisor', '1000');
+    }
+    ini_set('session.gc_maxlifetime', (string) SESSION_LIFETIME);
     session_name('nsid');
     session_set_cookie_params([
-        'lifetime' => 60 * 60 * 24 * 30,
+        'lifetime' => SESSION_LIFETIME,
         'path' => base_path() === '' ? '/' : base_path() . '/',
         'secure' => is_https(),
         'httponly' => true,
@@ -63,6 +74,78 @@ function csrf_valid(?string $token): bool
 function client_ip(): string
 {
     return substr($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0', 0, 45);
+}
+
+/** Absolute address for emails and access links. Uses config app_url when set, so a forged Host header
+    cannot turn a password-reset email into a link to somebody else's site. */
+function url_full(string $path = ''): string
+{
+    $base = rtrim((string) config('app_url', ''), '/');
+    if ($base === '') {
+        $host = preg_replace('/[^A-Za-z0-9.\-:\[\]]/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+        $base = (is_https() ? 'https://' : 'http://') . $host . base_path();
+    }
+    return $base . '/' . ltrim($path, '/');
+}
+
+/* ---------- One-time messages shown on the next page ---------- */
+
+function flash(string $type, string $message): void
+{
+    $_SESSION['flash'][] = [$type === 'error' ? 'err' : ($type === 'success' ? 'ok' : 'info'), $message];
+}
+
+function flash_html(): string
+{
+    $out = '';
+    foreach ($_SESSION['flash'] ?? [] as [$type, $msg]) $out .= '<p class="flash ' . e($type) . '" role="status">' . e($msg) . '</p>';
+    unset($_SESSION['flash']);
+    return $out ? '<div class="flashes">' . $out . '</div>' : '';
+}
+
+/** For POST forms: check the CSRF token or stop with a message. */
+function require_post_csrf(string $back): void
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') redirect($back);
+    if (!csrf_valid($_POST['csrf'] ?? null)) { flash('error', 'Security check failed. Please try again.'); redirect($back); }
+}
+
+function csrf_field(): string
+{
+    return '<input type="hidden" name="csrf" value="' . e(csrf_token()) . '">';
+}
+
+/** Simple per-session rate limit: true when $key has been used $max times in the last hour. */
+function rate_limited(string $key, int $max): bool
+{
+    $log = array_filter((array) ($_SESSION['rate'][$key] ?? []), fn($t) => $t > time() - 3600);
+    $_SESSION['rate'][$key] = array_values($log);
+    return count($log) >= $max;
+}
+
+function rate_hit(string $key): void
+{
+    $_SESSION['rate'][$key][] = time();
+}
+
+function initials(string $name, string $email = ''): string
+{
+    $parts = preg_split('/\s+/', trim($name)) ?: [];
+    $s = '';
+    foreach (array_slice(array_filter($parts), 0, 2) as $p) $s .= mb_substr($p, 0, 1);
+    if ($s === '') $s = mb_substr($email, 0, 1);
+    return mb_strtoupper($s ?: '?');
+}
+
+function time_ago(?string $utc): string
+{
+    if (!$utc) return 'never';
+    $s = time() - strtotime($utc . ' UTC');
+    if ($s < 60) return 'just now';
+    if ($s < 3600) return floor($s / 60) . ' min ago';
+    if ($s < 86400) return floor($s / 3600) . ' h ago';
+    if ($s < 86400 * 30) return floor($s / 86400) . ' days ago';
+    return gmdate('j M Y', strtotime($utc . ' UTC'));
 }
 
 /* ---------- JSON API helpers ---------- */

@@ -1,0 +1,97 @@
+<?php
+// Database upgrades. Updating on cPanel means extracting a new zip over the old files, so new tables have to
+// appear by themselves: bootstrap calls migrate() and it runs once per schema version (cheap file check after).
+// Every step is idempotent (CREATE TABLE IF NOT EXISTS), so running it twice is harmless.
+
+const SCHEMA_VERSION = 2;
+
+function schema_version_file(): string
+{
+    return APP_ROOT . '/storage/schema.version';
+}
+
+/** Runs pending upgrades. Silent no-op before the app is installed (no users table yet). */
+function migrate(bool $force = false): void
+{
+    $file = schema_version_file();
+    $have = is_file($file) ? (int) trim((string) file_get_contents($file)) : 0;
+    if (!$force && $have >= SCHEMA_VERSION) return;
+    try {
+        db()->query('SELECT 1 FROM users LIMIT 1');
+    } catch (Throwable $e) {
+        return; // not installed yet: install.php creates everything
+    }
+    foreach (schema_v2() as $sql) db()->exec($sql);
+    @file_put_contents($file, SCHEMA_VERSION . "\n");
+}
+
+/** v2: WarriorPlus access links and the product activity log. Password reset tokens use the existing tokens table. */
+function schema_v2(): array
+{
+    if (db_driver() === 'sqlite') {
+        return [
+            'CREATE TABLE IF NOT EXISTS access_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              code TEXT NOT NULL UNIQUE,
+              label TEXT NOT NULL,
+              products TEXT NOT NULL,
+              note TEXT NULL,
+              max_uses INTEGER NOT NULL DEFAULT 0,
+              uses INTEGER NOT NULL DEFAULT 0,
+              expires_at TEXT NULL,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              created_by INTEGER NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )',
+            'CREATE TABLE IF NOT EXISTS product_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id INTEGER NOT NULL,
+              product TEXT NOT NULL,
+              action TEXT NOT NULL,
+              source TEXT NOT NULL,
+              link_id INTEGER NULL,
+              actor_id INTEGER NULL,
+              note TEXT NULL,
+              ip TEXT NULL,
+              created_at TEXT NOT NULL
+            )',
+            'CREATE INDEX IF NOT EXISTS idx_pe_user ON product_events(user_id, created_at)',
+            'CREATE INDEX IF NOT EXISTS idx_pe_link ON product_events(link_id)',
+            'CREATE INDEX IF NOT EXISTS idx_pe_created ON product_events(created_at)',
+        ];
+    }
+    $tail = ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+    return [
+        'CREATE TABLE IF NOT EXISTS access_links (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          code VARCHAR(64) NOT NULL UNIQUE,
+          label VARCHAR(120) NOT NULL,
+          products VARCHAR(255) NOT NULL,
+          note VARCHAR(255) NULL,
+          max_uses INT NOT NULL DEFAULT 0,
+          uses INT NOT NULL DEFAULT 0,
+          expires_at DATETIME NULL,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_by INT UNSIGNED NULL,
+          created_at DATETIME NOT NULL,
+          updated_at DATETIME NOT NULL
+        )' . $tail,
+        // No foreign key on user_id: the log outlives deleted accounts.
+        'CREATE TABLE IF NOT EXISTS product_events (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          user_id INT UNSIGNED NOT NULL,
+          product VARCHAR(30) NOT NULL,
+          action VARCHAR(10) NOT NULL,
+          source VARCHAR(20) NOT NULL,
+          link_id INT UNSIGNED NULL,
+          actor_id INT UNSIGNED NULL,
+          note VARCHAR(255) NULL,
+          ip VARCHAR(45) NULL,
+          created_at DATETIME NOT NULL,
+          KEY idx_pe_user (user_id, created_at),
+          KEY idx_pe_link (link_id),
+          KEY idx_pe_created (created_at)
+        )' . $tail,
+    ];
+}

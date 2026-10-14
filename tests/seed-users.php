@@ -10,6 +10,7 @@ if (db_driver() !== 'sqlite') exit("Refusing to seed test accounts into a MySQL 
 $sql = file_get_contents(APP_ROOT . '/install/schema.sqlite.sql');
 foreach (array_filter(array_map('trim', explode(';', preg_replace('/^--.*$/m', '', $sql)))) as $stmt) db()->exec($stmt);
 
+migrate(true);
 $data = json_decode(file_get_contents(__DIR__ . '/dev-accounts.json'), true);
 foreach ($data['accounts'] as $a) {
     $id = qv('SELECT id FROM users WHERE email = ?', [$a['email']]);

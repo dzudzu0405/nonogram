@@ -1,9 +1,11 @@
-/* Projects dashboard: list, filter, sort, create, rename, duplicate, delete. */
+/* Project cards on the Dashboard (data-mode="recent": the latest four plus a "new project" card) and on
+   My Projects (data-mode="all": filter, search, sort, grid/list). Create, rename, duplicate and delete on both. */
 (function () {
   'use strict';
   const E = window.NonoEngine, $ = s => document.querySelector(s);
   const box = $('#projects');
   if (!box) return;
+  const mode = box.dataset.mode || 'all', RECENT = 4;
   let projects = [], limit = 0, loaded = false;
 
   // Per-browser preferences (sort, layout). Storage may be blocked, so never rely on it.
@@ -12,6 +14,8 @@
     set: (k, v) => { try { localStorage.setItem('ns.' + k, v); } catch (e) { /* ignore */ } },
   };
   const ui = { show: 'all', sort: pref.get('sort', 'updated'), view: pref.get('view', 'grid') };
+  const startShow = new URLSearchParams(location.search).get('show');
+  if (['warn', 'empty'].includes(startShow)) ui.show = startShow;
 
   const editorUrl = (id, extra = '') => `${NS.base}/app/editor.php?id=${id}${extra}`;
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -69,16 +73,19 @@
     const meta = [plural(p.count, 'puzzle'), p.sizes.length ? p.sizes.slice(0, 2).join(', ') + (p.sizes.length > 2 ? '…' : '') : '', levelsText(p.levels)]
       .filter(Boolean).map(t => `<span>${App.esc(t)}</span>`).join('');
     return `<article class="pcard ${kind(p)}" data-id="${p.id}">
-      <a class="thumb" href="${editorUrl(p.id)}" tabindex="-1" aria-hidden="true">${thumb(p)}${p.count ? `<span class="count">${p.count}</span>` : ''}</a>
+      <a class="thumb" href="${editorUrl(p.id)}" tabindex="-1" aria-hidden="true">${thumb(p)}<span class="pstatus">${statusChip(p)}</span>${p.count ? `<span class="count">${p.count}</span>` : ''}</a>
       <div class="pbody">
         <div class="ptitle"><h3><a href="${editorUrl(p.id)}">${name}</a></h3>${menu}</div>
         <div class="pmeta">${meta}</div>
-        <div class="pfoot">${statusChip(p)}<span class="edited" title="${App.esc(p.updated_at)} UTC">${ago(p.updated_at)}</span></div>
+        <div class="pfoot"><span class="edited" title="${App.esc(p.updated_at)} UTC">Edited ${ago(p.updated_at)}</span></div>
       </div>
     </article>`;
   }
 
+  const newCard = () => `<button type="button" class="pcard newcard" id="card-new"><span class="newplus">+</span><b>New project</b><span class="muted small">Start a new puzzle book</span></button>`;
+
   function visible() {
+    if (mode === 'recent') return projects.slice().sort((a, b) => (b.updated_at > a.updated_at) - (b.updated_at < a.updated_at) || b.id - a.id).slice(0, RECENT);
     const term = $('#filter').value.trim().toLowerCase();
     const list = projects.filter(p => (!term || p.name.toLowerCase().includes(term)) && (ui.show === 'all' || kind(p) === ui.show));
     const by = {
@@ -93,21 +100,25 @@
   function renderStats() {
     const n = { all: projects.length, warn: 0, empty: 0 }; let puzzles = 0, toCheck = 0;
     projects.forEach(p => { puzzles += p.count; toCheck += p.not_unique; if (kind(p) !== 'ok') n[kind(p)]++; });
-    $('#stat-projects').textContent = projects.length;
+    const set = (sel, v) => { const el = $(sel); if (el) el.textContent = v; };
+    set('#n-total', projects.length);
+    for (const k in n) set('#n-' + k, n[k]);
+    if (!$('#stat-projects')) return; // summary cards are on the Dashboard only
+    set('#stat-projects', projects.length);
     $('#stat-meter').style.width = Math.min(100, limit ? projects.length / limit * 100 : 0) + '%';
-    $('#stat-puzzles').textContent = puzzles;
-    $('#stat-warn').textContent = toCheck;
+    set('#stat-puzzles', puzzles);
+    set('#stat-warn', toCheck);
     $('#stat-check').classList.toggle('warn', toCheck > 0);
     $('#stat-check').disabled = !toCheck;
-    $('#stat-warn-note').textContent = toCheck ? `in ${plural(n.warn, 'project')} · click to show` : 'every puzzle has one solution';
-    for (const k in n) $('#n-' + k).textContent = n[k];
+    set('#stat-warn-note', toCheck ? `in ${plural(n.warn, 'project')} · click to see them` : 'every puzzle has one solution');
   }
 
   function render() {
     if (!loaded) return;
     renderStats();
-    box.classList.toggle('list', ui.view === 'list');
-    $('.toolbar').hidden = !projects.length;
+    box.classList.toggle('list', mode === 'all' && ui.view === 'list');
+    if ($('.toolbar')) $('.toolbar').hidden = !projects.length;
+    const seeAll = $('.seeall'); if (seeAll && mode === 'recent') seeAll.hidden = projects.length <= RECENT;
     if (!projects.length) {
       box.innerHTML = `<div class="emptystate">
         <h2>Make your first puzzle book</h2>
@@ -124,6 +135,7 @@
       return;
     }
     const list = visible();
+    if (mode === 'recent') { box.innerHTML = list.map(card).join('') + newCard(); $('#card-new').onclick = () => openName(); return; }
     if (list.length) { box.innerHTML = list.map(card).join(''); return; }
     const why = $('#filter').value.trim() ? `No projects match “${App.esc($('#filter').value.trim())}”.` : 'No projects in this view.';
     box.innerHTML = `<div class="nomatch"><p>${why}</p><button class="btn" id="clear-filter">Show all projects</button></div>`;
@@ -212,7 +224,7 @@
   box.addEventListener('click', e => {
     const btn = e.target.closest('[data-act]');
     const el = e.target.closest('.pcard');
-    if (!el || el.classList.contains('skeleton')) return;
+    if (!el || el.classList.contains('skeleton') || el.classList.contains('newcard')) return;
     const p = projects.find(x => x.id === +el.dataset.id);
     if (!btn) {
       // Clicking anywhere on the card (outside links and menus) opens the project.
@@ -248,7 +260,7 @@
     render();
   }
   document.querySelectorAll('.seg [data-show]').forEach(b => { b.onclick = () => setShow(b.dataset.show); });
-  $('#stat-check').onclick = () => { setShow('warn'); box.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  if ($('#stat-check')) $('#stat-check').onclick = () => { location.href = `${NS.base}/app/projects.php?show=warn`; };
 
   function setView(v) {
     ui.view = v; pref.set('view', v);
@@ -257,9 +269,11 @@
   }
   document.querySelectorAll('.viewtoggle [data-view]').forEach(b => { b.onclick = () => setView(b.dataset.view); });
 
-  $('#sort').value = ui.sort;
-  $('#sort').onchange = () => { ui.sort = $('#sort').value; pref.set('sort', ui.sort); render(); };
-  $('#filter').oninput = render;
+  if ($('#sort')) {
+    $('#sort').value = ui.sort;
+    $('#sort').onchange = () => { ui.sort = $('#sort').value; pref.set('sort', ui.sort); render(); };
+    $('#filter').oninput = render;
+  }
   $('#qa-new').onclick = () => openName();
   $('#qa-upload').onclick = uploadNew;
 
@@ -274,11 +288,25 @@
       return;
     }
     if (typing || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
-    if (e.key === '/') { e.preventDefault(); $('#filter').focus(); }
+    if (e.key === '/' && $('#filter')) { e.preventDefault(); $('#filter').focus(); }
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openName(); }
   });
 
+  // The Dashboard's welcome shows a finished puzzle drawn by the app itself.
+  function heroArt() {
+    const cv = $('#hero-art'); if (!cv || !window.Render) return;
+    const g = E.decodeGrid(['00000000000', '00110001100', '01111011110', '11111111111', '11111111111', '11111111111', '01111111110', '00111111100', '00011111000', '00001110000', '00000100000'].join(''));
+    const p = E.makePuzzle(11, 11, g, ['#c81d25']), dpr = devicePixelRatio || 1, size = 220;
+    cv.width = size * dpr; cv.height = size * dpr; cv.style.width = cv.style.height = size + 'px';
+    const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, size, size);
+    const cell = (size - 16) / (p.W + p.maxR * 0.8);
+    Render.drawPuzzle(Render.canvasR(x), p, 8, 8, cell, { solution: true, thin: 0.6, thick: 1.4 });
+  }
+
   greet();
+  heroArt();
   setView(ui.view);
+  if (startShow) setShow(ui.show);
+  if (location.hash === '#new') { history.replaceState(null, '', location.pathname + location.search); openName(); }
   load();
 })();

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '0.2.0');
+define('APP_VERSION', '0.3.0');
 
 $cfgFile = APP_ROOT . '/config.php';
 if (!is_file($cfgFile)) {
@@ -33,5 +33,9 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/entitlements.php';
+require_once __DIR__ . '/migrate.php';
+require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/access.php';
 
+migrate();
 start_session();

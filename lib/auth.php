@@ -3,10 +3,10 @@
 const LOGIN_MAX_ATTEMPTS = 8;      // per email or per IP
 const LOGIN_WINDOW_MIN = 15;
 
-function current_user(): ?array
+function current_user(bool $refresh = false): ?array
 {
     static $user = false;
-    if ($user !== false) return $user;
+    if ($user !== false && !$refresh) return $user;
     $id = $_SESSION['uid'] ?? null;
     $user = $id ? q1('SELECT id, email, name, role, status, created_at FROM users WHERE id = ?', [$id]) : null;
     if ($user && $user['status'] !== 'active') $user = null;
@@ -61,10 +61,33 @@ function attempt_login(string $email, string $password): ?string
         q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($password, PASSWORD_DEFAULT), $u['id']]);
     }
     q('DELETE FROM login_attempts WHERE email = ?', [$email]);
-    q('UPDATE users SET last_login_at = ? WHERE id = ?', [now(), $u['id']]);
-    session_regenerate_id(true);
-    $_SESSION['uid'] = (int) $u['id'];
+    login_as((int) $u['id']);
     return null;
+}
+
+/** Signs the user in on this session (new session id against fixation; parked access codes survive). */
+function login_as(int $id): array
+{
+    q('UPDATE users SET last_login_at = ? WHERE id = ?', [now(), $id]);
+    session_regenerate_id(true);
+    $_SESSION['uid'] = $id;
+    return current_user(true);
+}
+
+const PASSWORD_MIN = 8;
+
+/** Returns an error message, or null when the password is acceptable. */
+function password_problem(string $pass, string $confirm): ?string
+{
+    if (strlen($pass) < PASSWORD_MIN) return 'Use a password with at least ' . PASSWORD_MIN . ' characters.';
+    if (strlen($pass) > 200) return 'That password is too long.';
+    if ($pass !== $confirm) return 'The two passwords do not match.';
+    return null;
+}
+
+function is_admin(?array $u): bool
+{
+    return $u !== null && $u['role'] === 'admin';
 }
 
 function logout(): void
@@ -87,4 +110,25 @@ function create_user(string $email, string $name, ?string $password, string $rol
         'status' => 'active',
         'created_at' => now(),
     ]);
+}
+
+const RESET_MINUTES = 60;
+
+/** Emails a one-hour, single-use password reset link. Only the token's SHA-256 is stored (tokens table,
+    purpose 'reset'); any older link for the account stops working. Returns whether the email went out. */
+function send_reset_link(array $u): bool
+{
+    q("UPDATE tokens SET used_at = ? WHERE user_id = ? AND purpose = 'reset' AND used_at IS NULL", [now(), $u['id']]);
+    $token = bin2hex(random_bytes(32));
+    insert('tokens', [
+        'user_id' => $u['id'], 'token_hash' => hash('sha256', $token), 'purpose' => 'reset',
+        'expires_at' => gmdate('Y-m-d H:i:s', time() + RESET_MINUTES * 60), 'used_at' => null, 'created_at' => now(),
+    ]);
+    $first = explode(' ', trim((string) $u['name']))[0] ?: 'there';
+    $sent = mail_send($u['email'], (string) $u['name'], 'Reset your ' . config('app_name') . ' password', mail_layout('Reset your password', [
+        "Hi $first,",
+        'Someone (hopefully you) asked to reset the password for this account. Choose a new one with the button below. The link works once and expires in ' . RESET_MINUTES . ' minutes.',
+    ], ['Choose a new password', url_full('reset.php?t=' . $token)], 'If you did not ask for this, ignore this email: your password stays the same.'));
+    if (!$sent) error_log('[nonogram] reset email to ' . $u['email'] . ' failed: ' . mail_last_error());
+    return $sent;
 }

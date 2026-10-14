@@ -4,6 +4,10 @@
 return [
     'app_name'  => 'Nonogram Studio',
 
+    // The site's full address, no slash at the end, e.g. 'https://studio.yourdomain.com' (or '.../studio').
+    // Access links and password-reset emails use it. Leave empty only while testing.
+    'app_url'   => '',
+
     // Leave empty to auto-detect. Set it if the app lives in a sub-folder, e.g. '/studio'.
     'base_path' => '',
 
@@ -23,11 +27,34 @@ return [
     // A long random string. Used to sign tokens. Changing it logs everyone out of magic links.
     'app_key'   => 'replace-with-64-random-characters',
 
-    // Sender for welcome and login emails (create this mailbox in cPanel > Email Accounts).
-    'mail_from' => 'support@example.com',
+    // Email for password resets and welcome messages. Create a mailbox in cPanel > Email Accounts
+    // (e.g. noreply@yourdomain.com), then open "Connect Devices" on it for the host and port.
+    // Typical cPanel: port 465 with 'ssl', or 587 with 'tls'. The username is the full address.
+    // 'driver' => 'log' sends nothing and writes messages to storage/logs/mail.log (local testing with debug on).
+    'mail' => [
+        'driver'     => 'smtp',
+        'host'       => '',            // e.g. mail.yourdomain.com
+        'port'       => 465,
+        'encryption' => 'ssl',
+        'username'   => '',            // e.g. noreply@yourdomain.com
+        'password'   => '',
+        'from_email' => '',            // usually the same as username
+        'from_name'  => 'Nonogram Studio',
+        'reply_to'   => '',            // optional: where replies go, e.g. support@yourdomain.com
+    ],
 
-    // WarriorPlus notification security key (set in Phase 3).
-    'wplus_key' => '',
+    // Sales pages for the upgrade buttons in the app (sidebar plan card and dashboard). Leave a product empty
+    // to hide its button. Keys: pro, vault, dfy10, agency.
+    'upgrade_urls' => [
+        'pro'    => '',
+        'vault'  => '',
+        'dfy10'  => '',
+        'agency' => '',
+    ],
+
+    // false: accounts can only be created from an access link (recommended for WarriorPlus sales).
+    // true: anyone can sign up; without a product they see "no license yet".
+    'open_registration' => false,
 
     // Show detailed errors. Keep false on the live site.
     'debug'     => false,

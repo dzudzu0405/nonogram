@@ -35,6 +35,7 @@ if (!$done && $allOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $existing = qv('SELECT id FROM users WHERE email = ?', [$email]);
             if ($existing) q("UPDATE users SET role = 'admin', password_hash = ? WHERE id = ?", [password_hash($pass, PASSWORD_DEFAULT), $existing]);
             else create_user($email, $name, $pass, 'admin');
+            migrate(true); // newer tables: access links, product log
             file_put_contents($lock, 'Installed ' . now() . "\n");
             $done = true;
         }
